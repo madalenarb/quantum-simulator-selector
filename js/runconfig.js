@@ -1,8 +1,8 @@
 /*
  * Run-configuration templates: for each outcome, a script that sets the backend up the way
  * the dissertation ran it (versions of Table 4.3, layouts of Table 4.5, double precision),
- * with a builder for the benchmark circuit of the structure class. They are starting
- * points to edit, not the harness of the dissertation.
+ * with a builder for an example circuit of the structure class. They are starting points
+ * to edit, not the harness of the dissertation.
  *
  * RunConfig.forOutcome(rec, ctx) returns { file, lang, text } or null, where
  * ctx = { n, cls, output, fromFile }.

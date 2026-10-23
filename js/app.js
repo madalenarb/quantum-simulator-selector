@@ -962,7 +962,7 @@
     var det = el("details", "runcfg");
     det.appendChild(el("summary", "", "<span class=\"ev-h\">Run configuration</span><span class=\"ev-refs\">" + esc(cfg.file) + " · template</span>"));
     var body = el("div", "rc-body");
-    body.appendChild(el("p", "rc-note", "A starting point set up as the dissertation ran this backend, with the benchmark circuit of this structure class. Replace the circuit with yours; other versions or sites may need other options."));
+    body.appendChild(el("p", "rc-note", "A starting point set up as the dissertation ran this backend, with an example circuit of this structure class to replace with yours. Other versions or sites may need other options."));
     var bar = el("div", "rc-bar");
     var copy = el("button", "btn ghost small", "Copy code");
     copy.type = "button";

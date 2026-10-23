@@ -157,7 +157,7 @@
       var note = (D.notes[reg + "|" + c + "|" + b] || {})[String(nUse)] || null;
       return { b: b, t: v.t, kind: v.kind, note: note || v.note, excluded: S.excluded(reg, note), obs: obs("sweep", reg, c, b), v: v };
     });
-    var foot = ["Times as plotted in Figure 5.1" + S.PANEL[reg][c] + "."];
+    var foot = ["Times as plotted in Figure 5.1" + S.PANEL[reg][c] + ", the fastest repetition at each size."];
     if (reg === "gpu") foot.push("The times of Qiskit Aer and CUDA-Q include the copy of the state to host memory; those of Qulacs, qibojit and QuEST do not (Table 4.4).");
     if (nUse !== ctx.n) foot.push("Your size lies below the smallest size measured, so the ranking shows " + N + " = " + nUse + ".");
     if (entries.some(function (e) { return e.kind === "estimate"; })) foot.push("≈ marks an estimate beyond the sweep, which ends at " + N + " = " + end + ", assuming the time at least doubles with each added qubit.");

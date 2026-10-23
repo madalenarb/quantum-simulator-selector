@@ -21,8 +21,8 @@ measured at that size, a run configuration to start from, and the limits of the 
      of every backend measured at that size, ranked by time, with its ratio to the fastest and
      one observation from Chapter 5;
    - **Run configuration**: a script or C program set up the way the dissertation ran that
-     backend (versions of Table 4.3, layouts of Table 4.5, double precision), with the
-     benchmark circuit of the structure class to replace with yours.
+     backend (versions of Table 4.3, layouts of Table 4.5, double precision), with an example
+     circuit of the structure class to replace with yours.
 
    The side column shows the memory the state needs on every platform, the decision path, and
    what lies outside the measurements for this query.
