@@ -1,12 +1,15 @@
 /*
- * Interface of the Quantum Simulator Selector, in three phases:
- * the questionnaire ("measuring"), a short collapse sequence, and the readout.
- * All decision logic lives in window.Selector (js/rules.js).
+ * Interface of the Quantum Simulator Selector, in three phases: the questionnaire
+ * ("measuring"), a short collapse sequence, and the readout. Decision logic lives in
+ * window.Selector (js/rules.js), the measurements in js/data.js and js/evidence.js,
+ * the OpenQASM reader in js/qasm.js, run templates in js/runconfig.js and the side
+ * tools in js/tools.js.
  */
 (function () {
   "use strict";
 
-  var S = window.Selector;
+  var S = window.Selector, E = window.Evidence, Q = window.QASM, RC = window.RunConfig, T = window.Tools;
+  var CANONICAL = "https://madalenarb.github.io/quantum-simulator-selector/";
   function $(id) { return document.getElementById(id); }
   var views = { ask: $("askView"), collapse: $("collapseView"), result: $("resultView") };
   var stepsEl = $("steps"), statusText = $("statusText"), reviewBar = $("reviewBar"), restartBtn = $("restartBtn");
@@ -33,6 +36,7 @@
   var draft = freshDraft();
   var timers = [];
   var lastResult = null, lastFlow = null;
+  var qasmInfo = null;     // analysis of the last OpenQASM file read
 
   /* ---------- helpers ---------- */
   function emptyAnswers() { return { circuits: [], other: null, hw: [] }; }
@@ -43,6 +47,7 @@
       otherOn: !!(A.other && A.other.name),
       otherName: A.other ? A.other.name : "",
       otherCls: A.other ? A.other.cls : null,
+      otherSrc: A.other && A.other.src ? A.other.src : null,
       hw: S.hwList(A).slice()
     };
   }
@@ -56,11 +61,101 @@
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]; }); }
   function lc(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
   function warn(s) { return "<span class=\"warn\">" + s + "</span>"; }
+  function sup(s) { return String(s).replace(/2\^(\d+)/g, function (m, d) { return "2" + d.split("").map(function (x) { return "⁰¹²³⁴⁵⁶⁷⁸⁹"[+x]; }).join(""); }); }
   function clearTimers() { timers.forEach(clearTimeout); timers = []; }
   function show(name) { Object.keys(views).forEach(function (k) { views[k].hidden = k !== name; }); }
   function scrollToEl(node) {
     var top = node.getBoundingClientRect().top + window.pageYOffset - 16;
     window.scrollTo({ top: Math.max(0, top), behavior: reduceMotion ? "auto" : "smooth" });
+  }
+  function copyText(text, status, holder, label) {
+    function fallback() {
+      holder.innerHTML = "";
+      var ta = el("textarea", "copybox");
+      ta.readOnly = true;
+      ta.value = text;
+      ta.setAttribute("aria-label", label);
+      holder.appendChild(ta);
+      ta.focus(); ta.select();
+      status.textContent = "Select all and copy";
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { status.textContent = "Copied"; holder.innerHTML = ""; }, fallback);
+      } else fallback();
+    } catch (e) { fallback(); }
+  }
+
+  /* ---------- shareable links ---------- */
+  var CLS_KEYS = S.OTHER_CLASSES;
+  var ALLOWED = {
+    noise: ["no", "yes"], out: ["samples", "state", "tableau"], cpu: ["thread", "node", "few", "many"],
+    host: ["yes", "no"], gpus: ["eight", "sixteen"]
+  };
+  function encode(a) {
+    var p = [];
+    function add(k, v) { if (v !== undefined && v !== null && v !== "") p.push(k + "=" + encodeURIComponent(v)); }
+    add("noise", a.noise);
+    if (a.noise !== "yes") {
+      add("c", (a.circuits || []).join(","));
+      if (a.other && a.other.name) { add("other", a.other.name); add("ocls", a.other.cls); if (a.other.src === "qasm") add("osrc", "qasm"); }
+      add("out", a.output);
+    }
+    add("n", a.n);
+    if (a.hw && a.hw.length) add("hw", a.hw.join(","));
+    add("cpu", a.cpuScale);
+    add("host", a.host);
+    add("gpus", a.gpuCount);
+    return p.join("&");
+  }
+  function decode(search) {
+    var params = {};
+    String(search || "").replace(/^\?/, "").split("&").forEach(function (kv) {
+      if (!kv) return;
+      var i = kv.indexOf("=");
+      var k = i === -1 ? kv : kv.slice(0, i), v = i === -1 ? "" : kv.slice(i + 1);
+      try { params[decodeURIComponent(k)] = decodeURIComponent(v.replace(/\+/g, " ")); } catch (e) { /* ignore malformed pair */ }
+    });
+    if (!params.noise || ALLOWED.noise.indexOf(params.noise) === -1) return null;
+    var a = emptyAnswers();
+    a.noise = params.noise;
+    if (a.noise !== "yes") {
+      a.circuits = String(params.c || "").split(",").filter(function (id) { return S.CIRCUIT_BY_ID[id]; });
+      a.circuits = a.circuits.filter(function (id, i) { return a.circuits.indexOf(id) === i; });
+      var name = String(params.other || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80);
+      if (name && CLS_KEYS.indexOf(params.ocls) !== -1) a.other = { name: name, cls: params.ocls, src: params.osrc === "qasm" ? "qasm" : null };
+      if (ALLOWED.out.indexOf(params.out) !== -1) a.output = params.out;
+      if (a.output === "tableau" && !S.groupsOf(a).some(function (g) { return g.cls === "clifford"; })) a.output = null;
+    }
+    if (/^\d{1,4}$/.test(params.n || "")) { var n = parseInt(params.n, 10); if (n >= 2 && n <= 1000) a.n = n; }
+    if (params.hw) a.hw = ["gpu", "cpu"].filter(function (h) { return String(params.hw).split(",").indexOf(h) !== -1; });
+    if (ALLOWED.cpu.indexOf(params.cpu) !== -1) a.cpuScale = params.cpu;
+    if (ALLOWED.host.indexOf(params.host) !== -1) a.host = params.host;
+    if (ALLOWED.gpus.indexOf(params.gpus) !== -1) a.gpuCount = params.gpus;
+    return a;
+  }
+  // Keep only the answers the flow asks for, so links stay short and unambiguous.
+  function pruned(a) {
+    var f = S.flow(a), b = { noise: a.noise, circuits: [], other: null, hw: [] };
+    f.qs.forEach(function (id) {
+      if (id === "structure") { b.circuits = a.circuits.slice(); b.other = a.other ? clone(a.other) : null; }
+      else if (id === "output") b.output = a.output;
+      else if (id === "hw") b.hw = S.hwList(a).slice();
+      else b[id] = a[id];
+    });
+    return b;
+  }
+  function baseUrl() {
+    var l = window.location;
+    var local = l.protocol === "http:" || l.protocol === "https:";
+    if (local && (/github\.io$/.test(l.hostname) || l.hostname === "localhost" || l.hostname === "127.0.0.1")) return l.origin + l.pathname;
+    return CANONICAL;
+  }
+  function shareUrl() { return baseUrl() + "?" + encode(pruned(A)); }
+  function clearUrl() {
+    try {
+      if (window.location.search && window.history && window.history.replaceState) window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+    } catch (e) { /* not allowed in this context */ }
   }
 
   /* ---------- memory ---------- */
@@ -94,11 +189,8 @@
   var HW_NAME = { cpu: "CPUs", gpu: "GPUs" };
   function optionsFor(id) { return S.QUESTIONS[id].options ? S.QUESTIONS[id].options(A) : []; }
   function circuitNames() {
-    var names = (A.circuits || []).map(function (cid) {
-      for (var i = 0; i < S.CIRCUITS.length; i++) if (S.CIRCUITS[i].id === cid) return S.CIRCUITS[i].name;
-      return cid;
-    });
-    if (A.other && A.other.name) names.push(esc(A.other.name) + (A.other.cls === "unsure" ? " (structure unknown)" : ""));
+    var names = (A.circuits || []).map(function (cid) { return S.CIRCUIT_BY_ID[cid] ? S.CIRCUIT_BY_ID[cid].name : cid; });
+    if (A.other && A.other.name) names.push(esc(A.other.name) + (A.other.cls === "unsure" ? " (structure unknown)" : A.other.src === "qasm" ? " (from your file)" : ""));
     return names;
   }
   function answerLabel(id) {
@@ -130,14 +222,15 @@
   }
   function setAnswer(id, v) {
     A[id] = v;
-    if (id === "noise" && A.n == null) nDraft = v === "yes" ? 12 : 30;
+    if (id === "noise" && A.n == null && !qasmInfo) nDraft = v === "yes" ? 12 : 30;
     afterAnswer();
   }
   function commitStructure() {
     A.circuits = draft.circuits.slice();
-    A.other = draft.otherOn ? { name: draft.otherName.trim(), cls: draft.otherCls } : null;
+    A.other = draft.otherOn ? { name: draft.otherName.trim(), cls: draft.otherCls, src: draft.otherSrc === "qasm" ? "qasm" : null } : null;
     var hasClifford = S.groupsOf(A).some(function (g) { return g.cls === "clifford"; });
     if (A.output === "tableau" && !hasClifford) A.output = null;
+    if (A.other && A.other.src === "qasm" && qasmInfo && A.n == null) nDraft = Math.min(1000, Math.max(2, qasmInfo.n));
     afterAnswer();
   }
   function commitHw() {
@@ -146,8 +239,9 @@
   }
   function reset() {
     clearTimers();
+    clearUrl();
     A = emptyAnswers();
-    review = false; isExample = false; editing = null; nDraft = 30;
+    review = false; isExample = false; editing = null; nDraft = 30; qasmInfo = null;
     draft = freshDraft();
     hero.reset();
     renderAsk({ focus: true });
@@ -190,6 +284,9 @@
     prompt.id = "q-" + id;
     card.appendChild(prompt);
     card.appendChild(el("p", "q-help", helpFor(q)));
+    if (id === "output" && qasmInfo && A.other && A.other.src === "qasm" && qasmInfo.measures) {
+      card.appendChild(el("p", "q-hint", "Your file ends in " + qasmInfo.measures + " measurement" + (qasmInfo.measures === 1 ? "" : "s") + ", so samples may be what it needs."));
+    }
 
     if (id === "n") card.appendChild(qubitControls());
     else if (q.multi === "circuits") card.appendChild(circuitPicker());
@@ -271,8 +368,7 @@
         txt.appendChild(el("span", "t", c.name));
         txt.appendChild(el("span", "d", c.note));
         b.appendChild(txt);
-        var badge = el("span", "conf conf-" + c.conf, S.CONFIDENCE[c.conf].label);
-        b.appendChild(badge);
+        b.appendChild(el("span", "conf conf-" + c.conf, S.CONFIDENCE[c.conf].label));
         b.title = S.CONFIDENCE[c.conf].d;
         b.addEventListener("click", function () {
           var i = draft.circuits.indexOf(c.id);
@@ -287,9 +383,9 @@
       box.appendChild(group);
     });
 
-    // A circuit the researcher describes and classifies
+    // A circuit the researcher describes, or reads from an OpenQASM file
     var og = el("div", "cgroup");
-    og.appendChild(el("div", "cgroup-h", "<span class=\"cgroup-name\">Not in the list</span><span class=\"cgroup-d\">Describe your own circuit and say how it is structured</span>"));
+    og.appendChild(el("div", "cgroup-h", "<span class=\"cgroup-name\">Not in the list</span><span class=\"cgroup-d\">Read your own circuit from an OpenQASM file, or name it and say how it is structured</span>"));
     var otile = el("button", "ctile other");
     otile.type = "button";
     otile.id = "circ-other";
@@ -299,14 +395,66 @@
     otile.appendChild(el("span", "box", ""));
     var otxt = el("span", "ctext");
     otxt.appendChild(el("span", "t", "Another circuit"));
-    otxt.appendChild(el("span", "d", "Name it and choose its structure, or pick Not sure"));
+    otxt.appendChild(el("span", "d", "From an OpenQASM 2 or 3 file, or described by you"));
     otile.appendChild(otxt);
-    otile.appendChild(el("span", "conf conf-user", "Your mapping"));
+    var obadge = el("span", "conf " + (draft.otherSrc === "qasm" ? "conf-file" : "conf-user"), draft.otherSrc === "qasm" ? S.CONFIDENCE.file.label : S.CONFIDENCE.user.label);
+    otile.appendChild(obadge);
     og.appendChild(otile);
 
     var obox = el("div", "otherbox");
     obox.id = "other-box";
     obox.hidden = !draft.otherOn;
+
+    // OpenQASM reader
+    var qbox = el("div", "qasm");
+    qbox.appendChild(el("p", "olabel strong", "Read it from an OpenQASM file"));
+    var drop = el("div", "qasm-drop");
+    var fileIn = el("input");
+    fileIn.type = "file";
+    fileIn.accept = ".qasm,.qasm2,.qasm3,.inc,.txt,text/plain";
+    fileIn.className = "visually-hidden";
+    fileIn.id = "qasm-file";
+    fileIn.tabIndex = -1;
+    var pick = el("button", "btn ghost small", "Choose a file");
+    pick.type = "button";
+    pick.id = "qasm-pick";
+    drop.appendChild(pick);
+    drop.appendChild(el("span", "qasm-or", "or drop a .qasm file here"));
+    drop.appendChild(fileIn);
+    qbox.appendChild(drop);
+    var paste = el("details", "qasm-paste");
+    paste.appendChild(el("summary", "", "Paste OpenQASM or load an example"));
+    var ta = el("textarea", "qasm-text");
+    ta.id = "qasm-text";
+    ta.rows = 7;
+    ta.spellcheck = false;
+    ta.setAttribute("aria-label", "OpenQASM source");
+    ta.placeholder = "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[3];\nh q[0];\ncx q[0],q[1];";
+    paste.appendChild(ta);
+    var prow = el("div", "qasm-row");
+    var readBtn = el("button", "btn small", "Read");
+    readBtn.type = "button";
+    readBtn.id = "qasm-read";
+    prow.appendChild(readBtn);
+    prow.appendChild(el("span", "qasm-ex-l", "Examples on 10 qubits"));
+    [["qft", "QFT"], ["ghz", "GHZ"], ["clifford", "Clifford"], ["hea", "HEA"]].forEach(function (x) {
+      var b = el("button", "chip", x[1]);
+      b.type = "button";
+      b.id = "qasm-ex-" + x[0];
+      b.addEventListener("click", function () { ta.value = Q.example(x[0], 10); read(ta.value, x[1] + " example"); });
+      prow.appendChild(b);
+    });
+    paste.appendChild(prow);
+    qbox.appendChild(paste);
+    var qerr = fieldError("err-qasm");
+    qbox.appendChild(qerr);
+    var qres = el("div", "qasm-result");
+    qres.setAttribute("aria-live", "polite");
+    qbox.appendChild(qres);
+    obox.appendChild(qbox);
+    if (qasmInfo && draft.otherSrc === "qasm") showAnalysis(qasmInfo);
+
+    obox.appendChild(el("p", "olabel strong sep", "Or name it and choose its structure"));
     var lab = el("label", "olabel", "Circuit name");
     lab.setAttribute("for", "other-name");
     var oin = el("input", "otext");
@@ -322,6 +470,7 @@
     ocls.setAttribute("role", "group");
     ocls.setAttribute("aria-labelledby", "other-cls-label");
     var firstChip = null;
+    var chips = {};
     S.OTHER_CLASSES.forEach(function (k) {
       var info = k === "unsure" ? S.UNSURE : S.CLASSES[k];
       var c = el("button", "chip ocls" + (k === "unsure" ? " unsure" : ""), info.name);
@@ -331,10 +480,12 @@
       c.setAttribute("aria-pressed", draft.otherCls === k ? "true" : "false");
       c.addEventListener("click", function () {
         draft.otherCls = k;
-        Array.prototype.forEach.call(ocls.children, function (x) { x.setAttribute("aria-pressed", x === c ? "true" : "false"); });
+        if (draft.otherSrc === "qasm" && (!qasmInfo || qasmInfo.cls !== k)) setSrc("user");
+        syncChips();
         errCls.hidden = true;
         refresh();
       });
+      chips[k] = c;
       if (!firstChip) firstChip = c;
       ocls.appendChild(c);
     });
@@ -348,8 +499,87 @@
     var foot = continueRow(function () { if (validate()) commitStructure(); });
     box.appendChild(foot.row);
 
+    function syncChips() { Object.keys(chips).forEach(function (k) { chips[k].setAttribute("aria-pressed", draft.otherCls === k ? "true" : "false"); }); }
+    function setSrc(src) {
+      draft.otherSrc = src;
+      obadge.className = "conf " + (src === "qasm" ? "conf-file" : "conf-user");
+      obadge.textContent = src === "qasm" ? S.CONFIDENCE.file.label : S.CONFIDENCE.user.label;
+    }
+    function showAnalysis(a) {
+      qres.innerHTML = "";
+      var card = el("div", "qasm-card");
+      var fname = a.fileName ? "<b>" + esc(a.fileName) + "</b>" : "Your circuit";
+      card.appendChild(el("p", "qasm-h", fname + (a.version ? " · OpenQASM " + esc(a.version) : "")));
+      var dl = el("dl", "qasm-dl");
+      function row(k, v) { dl.appendChild(el("dt", "", k)); dl.appendChild(el("dd", "", v)); }
+      row("Qubits", String(a.n) + (a.n > 1000 ? " (the selector asks for at most 1000)" : ""));
+      row("Gates", a.gates.toLocaleString("en-GB") + (a.gates ? " · " + a.oneQ.toLocaleString("en-GB") + " one-qubit, " + a.twoQ.toLocaleString("en-GB") + " two-qubit" + (a.multiQ ? ", " + a.multiQ + " on three or more" : "") : ""));
+      row("Depth", a.depth.toLocaleString("en-GB"));
+      if (a.measures) row("Measurements", String(a.measures));
+      row("Clifford only", a.clifford ? "Yes" : "No" + (a.firstNonClifford ? ", first non-Clifford gate " + esc(a.firstNonClifford.name) + " on line " + a.firstNonClifford.line : ""));
+      if (a.gateCounts.length) row("Most used", esc(a.gateCounts.join(", ")));
+      card.appendChild(dl);
+      var info = S.CLASSES[a.cls];
+      card.appendChild(el("p", "qasm-cls", "Suggested structure · <b>" + info.name + "</b>"));
+      var ul = el("ul", "qasm-why");
+      a.reasons.forEach(function (r) { ul.appendChild(el("li", "", esc(sup(r)))); });
+      if (a.unknownGates.length) ul.appendChild(el("li", "", "Gates without a definition in the file (" + esc(a.unknownGates.slice(0, 5).join(", ")) + ") count as non-Clifford gates on their qubits."));
+      card.appendChild(ul);
+      card.appendChild(el("p", "qasm-note", "The structure below is set to this class; change it if you know your circuit better. The qubit question will start at <i>n</i> = " + Math.min(1000, Math.max(2, a.n)) + "."));
+      qres.appendChild(card);
+    }
+    function read(text, fileName) {
+      qerr.hidden = true;
+      var a;
+      try { a = Q.analyse(text); } catch (e) {
+        qres.innerHTML = "";
+        qerr.textContent = (e.line ? "Line " + e.line + ". " : "") + (e.qasm ? e.message : "The file could not be read as OpenQASM.");
+        qerr.hidden = false;
+        return;
+      }
+      a.fileName = fileName || null;
+      qasmInfo = a;
+      var autoName = !draft.otherName.trim() || draft.autoName;
+      if (autoName) {
+        draft.otherName = (fileName || "Circuit from OpenQASM").replace(/\.(qasm2?|qasm3|txt|inc)$/i, "").slice(0, 80);
+        draft.autoName = true;
+        oin.value = draft.otherName;
+      }
+      draft.otherCls = a.cls;
+      setSrc("qasm");
+      syncChips();
+      errName.hidden = true; errCls.hidden = true; oin.removeAttribute("aria-invalid");
+      if (A.n == null || editing === "structure") nDraft = Math.min(1000, Math.max(2, a.n));
+      showAnalysis(a);
+      refresh();
+    }
+    function readFile(file) {
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024) { qerr.textContent = "The file is larger than 5 MB."; qerr.hidden = false; return; }
+      var fr = new FileReader();
+      fr.onload = function () { read(String(fr.result || ""), file.name); };
+      fr.onerror = function () { qerr.textContent = "The file could not be opened."; qerr.hidden = false; };
+      fr.readAsText(file);
+    }
+    pick.addEventListener("click", function () { fileIn.click(); });
+    fileIn.addEventListener("change", function () { readFile(fileIn.files && fileIn.files[0]); fileIn.value = ""; });
+    ["dragenter", "dragover"].forEach(function (ev) {
+      drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("over"); });
+    });
+    ["dragleave", "drop"].forEach(function (ev) {
+      drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("over"); });
+    });
+    drop.addEventListener("drop", function (e) {
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) readFile(f);
+    });
+    readBtn.addEventListener("click", function () {
+      if (!ta.value.trim()) { qerr.textContent = "Paste an OpenQASM program first, or load an example."; qerr.hidden = false; ta.focus(); return; }
+      read(ta.value, null);
+    });
+
     function selection() {
-      var other = draft.otherOn && draft.otherName.trim() && draft.otherCls ? { name: draft.otherName.trim(), cls: draft.otherCls } : null;
+      var other = draft.otherOn && draft.otherName.trim() && draft.otherCls ? { name: draft.otherName.trim(), cls: draft.otherCls, src: draft.otherSrc } : null;
       return { circuits: draft.circuits, other: other };
     }
     function refresh() {
@@ -371,11 +601,11 @@
       errName.hidden = true; errCls.hidden = true; oin.removeAttribute("aria-invalid");
       var count = draft.circuits.length;
       if (draft.otherOn) {
-        if (!draft.otherName.trim()) return fail(errName, oin, "Give your circuit a name, or untick Another circuit.");
+        if (!draft.otherName.trim()) return fail(errName, oin, "Give your circuit a name, read it from a file, or untick Another circuit.");
         if (!draft.otherCls) return fail(errCls, firstChip, "Choose its structure, or pick Not sure.");
         count++;
       }
-      if (!count) return fail(foot.hint, firstTile, "Select at least one circuit, or describe your own under Another circuit.");
+      if (!count) return fail(foot.hint, firstTile, "Select at least one circuit, or add your own under Another circuit.");
       return true;
     }
 
@@ -385,11 +615,12 @@
       otile.setAttribute("aria-expanded", draft.otherOn ? "true" : "false");
       obox.hidden = !draft.otherOn;
       errName.hidden = true; errCls.hidden = true; oin.removeAttribute("aria-invalid");
-      if (draft.otherOn) oin.focus();
+      if (draft.otherOn) pick.focus();
       refresh();
     });
     oin.addEventListener("input", function () {
       draft.otherName = oin.value;
+      draft.autoName = false;
       if (oin.value.trim()) { errName.hidden = true; oin.removeAttribute("aria-invalid"); }
       refresh();
     });
@@ -465,8 +696,10 @@
     box.appendChild(range);
 
     var chips = el("div", "chips");
-    cfg.chips.forEach(function (v) {
-      var c = el("button", "chip", String(v));
+    var picks = cfg.chips.slice();
+    if (qasmInfo && A.other && A.other.src === "qasm" && picks.indexOf(qasmInfo.n) === -1 && qasmInfo.n <= 1000) picks.unshift(qasmInfo.n);
+    picks.forEach(function (v) {
+      var c = el("button", "chip", String(v) + (qasmInfo && A.other && A.other.src === "qasm" && v === qasmInfo.n ? " · your file" : ""));
       c.type = "button";
       c.addEventListener("click", function () { showN(v, false); });
       chips.appendChild(c);
@@ -567,12 +800,12 @@
 
   /* ---------- collapse sequence ---------- */
   var SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹";
-  function sup(k) { return String(k).split("").map(function (d) { return SUP[+d]; }).join(""); }
+  function supN(k) { return String(k).split("").map(function (d) { return SUP[+d]; }).join(""); }
   function buildLines() {
     var n = A.n;
     var mem = A.noise === "yes"
-      ? "Checking the memory wall: 16 B × 4" + sup(n) + " = " + S.bytesLog2(2 * n + 4) + "…"
-      : "Checking the memory wall: 16 B × 2" + sup(n) + " = " + S.bytesLog2(n + 4) + "…";
+      ? "Checking the memory wall: 16 B × 4" + supN(n) + " = " + S.bytesLog2(2 * n + 4) + "…"
+      : "Checking the memory wall: 16 B × 2" + supN(n) + " = " + S.bytesLog2(n + 4) + "…";
     var pool = [
       "Applying the Born rule to your answers…",
       "Decohering the other candidates…",
@@ -582,7 +815,8 @@
       "Contracting the tensor network of options…",
       "Asking Gottesman and Knill…",
       "Swapping a global qubit with a local one…",
-      "Skipping the copy to host memory…"
+      "Skipping the copy to host memory…",
+      "Allocating a 2 MiB temporary, as QuEST does at n = 17…"
     ];
     for (var i = pool.length - 1; i > 0; i--) {
       var j = Math.floor(Math.random() * (i + 1));
@@ -669,10 +903,10 @@
       var txt = el("span", "fit-text");
       txt.appendChild(el("span", "fit-name", p.label));
       var status;
-      if (p.measured == null) status = el("span", "fit-status none", "Not measured in the thesis");
+      if (p.measured == null) status = el("span", "fit-status none", "No measurement in the thesis");
       else if (p.measured >= p.n) status = el("span", "fit-status full", "Measured up to <i>n</i> = " + p.measured);
       else status = el("span", "fit-status part", "Measured up to <i>n</i> = " + p.measured + "; capacity beyond");
-      if (p.measured != null && n > p.measured && n <= p.n) status.innerHTML += " · your size not measured";
+      if (p.measured != null && n > p.measured && n <= p.n) status.innerHTML += " · your size beyond the measurements";
       txt.appendChild(status);
       li.appendChild(txt);
       li.appendChild(el("span", "cap-n", "holds <i>n</i> ≤ " + p.n));
@@ -718,7 +952,39 @@
     return p;
   }
 
-  function outcomeView(o, bigView) {
+  function runConfigView(rec, block) {
+    var cfg = RC.forOutcome(rec, {
+      n: A.n, cls: block && block.cls ? block.cls : "dense",
+      output: A.output === "tableau" && block && block.cls !== "clifford" ? "state" : A.output,
+      fromFile: !!(block && block.circuits.some(function (c) { return c.conf === "file"; }))
+    });
+    if (!cfg) return null;
+    var det = el("details", "runcfg");
+    det.appendChild(el("summary", "", "<span class=\"ev-h\">Run configuration</span><span class=\"ev-refs\">" + esc(cfg.file) + " · template</span>"));
+    var body = el("div", "rc-body");
+    body.appendChild(el("p", "rc-note", "A starting point set up as the dissertation ran this backend, with the benchmark circuit of this structure class. Replace the circuit with yours; other versions or sites may need other options."));
+    var bar = el("div", "rc-bar");
+    var copy = el("button", "btn ghost small", "Copy code");
+    copy.type = "button";
+    var st = el("span", "status-msg");
+    st.setAttribute("role", "status");
+    bar.appendChild(copy); bar.appendChild(st);
+    body.appendChild(bar);
+    var holder = el("div");
+    body.appendChild(holder);
+    var pre = el("pre", "code");
+    var code = el("code", "lang-" + cfg.lang);
+    code.textContent = cfg.text;
+    pre.appendChild(code);
+    pre.tabIndex = 0;
+    pre.setAttribute("aria-label", "Template " + cfg.file);
+    body.appendChild(pre);
+    copy.addEventListener("click", function () { copyText(cfg.text, st, holder, "Template to copy"); });
+    det.appendChild(body);
+    return det;
+  }
+
+  function outcomeView(o, bigView, block) {
     var r = o.rec;
     var wrap = el("div", "outcome-block" + (bigView ? " big" : ""));
     var head = el("div", "outcome");
@@ -740,10 +1006,17 @@
     wrap.appendChild(el("p", "ev", r.ev));
     if (r.alt) wrap.appendChild(linkNames(el("p", "alt", "Also consider " + r.alt + ".")));
     if (r.note) wrap.appendChild(el("p", "alt", r.note));
+    var model = E.model(r, { n: A.n, A: A });
+    if (model) {
+      o.model = model;
+      wrap.appendChild(E.render(model, { open: bigView }));
+    }
+    var rc = runConfigView(r, block);
+    if (rc) wrap.appendChild(rc);
     if (r.caveats && r.caveats.length) {
       var det = el("details", "conds");
       if (bigView) det.open = true;
-      det.appendChild(el("summary", "", "Holds under " + r.caveats.length + " condition" + (r.caveats.length > 1 ? "s" : "")));
+      det.appendChild(el("summary", "", "<span class=\"ev-h\">Holds under " + r.caveats.length + " condition" + (r.caveats.length > 1 ? "s" : "") + "</span>"));
       var ul = el("ul", "caveats");
       r.caveats.forEach(function (c) { ul.appendChild(el("li", "", c)); });
       det.appendChild(ul);
@@ -758,6 +1031,24 @@
     var what = names.length <= 2 ? names.join(" and ") : names.length + " circuits";
     var out = { samples: "samples", state: "full state", tableau: "tableau" }[A.output] || "";
     return what + " · " + A.n + " qubits · " + out;
+  }
+
+  function outsideView(res) {
+    var items = T.outside(A, res);
+    var box = el("div");
+    var on = items.filter(function (x) { return x.on; }), off = items.filter(function (x) { return !x.on; });
+    var ul = el("ul", "outside");
+    on.forEach(function (x) { ul.appendChild(el("li", "", "<b>" + x.t + "</b> " + x.d)); });
+    box.appendChild(ul);
+    if (off.length) {
+      var det = el("details", "outside-more");
+      det.appendChild(el("summary", "", "Other limits of the measurements (" + off.length + ")"));
+      var ul2 = el("ul", "outside");
+      off.forEach(function (x) { ul2.appendChild(el("li", "", "<b>" + x.t + "</b> " + x.d)); });
+      det.appendChild(ul2);
+      box.appendChild(det);
+    }
+    return box;
   }
 
   function renderResults(res, f) {
@@ -798,14 +1089,15 @@
           var list = b.unsure.map(function (c) { return esc(c.name); }).join(", ");
           var all = b.unsure.length === b.circuits.length;
           var plural = b.unsure.length > 1;
+          var fromFile = b.unsure.every(function (c) { return c.conf === "file"; });
           card.appendChild(el("p", "incon",
-            "<b>Inconclusive for " + list + ".</b> " + (plural ? "These circuits were" : "This circuit was") +
-            " not benchmarked and " + (plural ? "are" : "is") + " mapped to this class by structure, so " +
+            "<b>" + (fromFile ? "Classified from your file" : "Inconclusive") + " for " + list + ".</b> " + (plural ? "These circuits are" : "This circuit is") +
+            " outside the benchmark set and " + (fromFile ? "placed in this class by the analysis of its gates" : "mapped to this class by structure") + ", so " +
             (all ? "the outcome is a best guess." : "the outcome is measured for the other circuits and only expected for " + (plural ? "these." : "this one."))));
         }
       }
       var outsEl = el("div", "block-outs" + (b.outcomes.length > 1 ? " pair" : ""));
-      b.outcomes.forEach(function (o) { outsEl.appendChild(outcomeView(o, single)); });
+      b.outcomes.forEach(function (o) { outsEl.appendChild(outcomeView(o, single, b)); });
       card.appendChild(outsEl);
       cont.appendChild(card);
     });
@@ -813,13 +1105,15 @@
     var refOnly = res.blocks.every(function (b) { return b.outcomes.every(function (o) { return o.rec.kind === "sv-ref"; }); });
     var mem = $("memory"); mem.innerHTML = ""; mem.appendChild(meter(res.kind, A.n, refOnly));
     var path = $("path"); path.innerHTML = ""; path.appendChild(pathList(f.qs));
+    var outside = $("outside"); outside.innerHTML = ""; outside.appendChild(outsideView(res));
     $("copyStatus").textContent = "";
     $("copyFallback").innerHTML = "";
     captionEl.textContent = single ? "Collapsed onto " + outs[0].rec.b : "Collapsed onto " + outs.length + " outcomes";
+    primeTools();
   }
 
   function summaryText(res, qs) {
-    var lines = ["Quantum Simulator Selector (prototype)", ""];
+    var lines = ["Quantum Simulator Selector (prototype)", shareUrl(), ""];
     qs.forEach(function (id) { if (S.answered(A, id)) lines.push(S.QUESTIONS[id].short + ": " + strip(answerLabel(id))); });
     res.blocks.forEach(function (b) {
       lines.push("");
@@ -832,32 +1126,35 @@
         if (r.note) lines.push(strip(r.note));
         if (r.out) lines.push("Range: " + strip(r.out));
         (r.caveats || []).forEach(function (c) { lines.push("- " + strip(c)); });
+        E.lines(o.model || E.model(r, { n: A.n, A: A })).forEach(function (l) { lines.push(strip(l)); });
       });
     });
     lines.push("", "Fastest configurations measured on Deucalion and an i9-13900KS workstation, double precision.");
     return lines.join("\n");
   }
 
-  function copySummary() {
-    var text = summaryText(lastResult, lastFlow.qs);
-    var status = $("copyStatus");
-    function fallback() {
-      var holder = $("copyFallback");
-      holder.innerHTML = "";
-      var ta = el("textarea", "copybox");
-      ta.readOnly = true;
-      ta.value = text;
-      ta.setAttribute("aria-label", "Summary to copy");
-      holder.appendChild(ta);
-      ta.focus(); ta.select();
-      status.textContent = "Select all and copy";
-    }
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(function () { status.textContent = "Copied"; }, fallback);
-      } else fallback();
-    } catch (e) { fallback(); }
+  /* ---------- tools ---------- */
+  var toolsPrimed = { mem: false, cmp: false };
+  function toolDefaults() {
+    var c = "qft";
+    if (lastResult && lastResult.blocks.length && lastResult.blocks[0].cls) c = S.circuitClass({ structure: lastResult.blocks[0].cls });
+    var n = A.n || 30;
+    var hw = S.hwList(A);
+    var bCfg = n <= 31 ? (hw.indexOf("gpu") !== -1 ? "gpu1h" : "thread") : n <= 34 ? "g4" : n === 35 ? "g8" : "g16";
+    return { n: n, c: c, dm: A.noise === "yes", a: n <= 33 ? "node" : "x64", b: bCfg, device: A.noise === "yes" ? "i9" : hw.indexOf("gpu") !== -1 || !hw.length ? "a100-80" : "x86" };
   }
+  function buildTool(which) {
+    var d = toolDefaults();
+    if (which === "mem") { var mb = $("memToolBody"); mb.innerHTML = ""; mb.appendChild(T.memoryTool({ n: Math.min(d.n, 80), dm: d.dm, device: d.device })); toolsPrimed.mem = true; }
+    else { var cb = $("cmpToolBody"); cb.innerHTML = ""; cb.appendChild(T.compareTool({ n: Math.min(Math.max(d.n, 2), 39), c: d.c, a: d.a, b: d.b })); toolsPrimed.cmp = true; }
+  }
+  // Closed tools pick up the current query the next time they open.
+  function primeTools() {
+    if (!$("memTool").open) toolsPrimed.mem = false;
+    if (!$("cmpTool").open) toolsPrimed.cmp = false;
+  }
+  $("memTool").addEventListener("toggle", function () { if ($("memTool").open && !toolsPrimed.mem) buildTool("mem"); });
+  $("cmpTool").addEventListener("toggle", function () { if ($("cmpTool").open && !toolsPrimed.cmp) buildTool("cmp"); });
 
   /* ---------- wiring ---------- */
   $("exampleBtn").addEventListener("click", showExample);
@@ -865,13 +1162,28 @@
   $("measureBtn").addEventListener("click", function () { if (S.flow(A).done) startCollapse(); });
   $("skipBtn").addEventListener("click", finishCollapse);
   $("changeBtn").addEventListener("click", function () {
+    clearUrl();
     review = true; editing = null; isExample = false;
     hero.set(0.9, false, false);
     renderAsk({ focus: false });
     scrollToEl(views.ask);
   });
   $("newBtn").addEventListener("click", reset);
-  $("copyBtn").addEventListener("click", copySummary);
+  $("copyBtn").addEventListener("click", function () { copyText(summaryText(lastResult, lastFlow.qs), $("copyStatus"), $("copyFallback"), "Summary to copy"); });
+  $("linkBtn").addEventListener("click", function () { copyText(shareUrl(), $("copyStatus"), $("copyFallback"), "Link to this result"); });
 
-  renderAsk({ focus: false });
+  // A shared link opens its result directly; the bare address always opens an empty questionnaire.
+  var shared = window.location.search ? decode(window.location.search) : null;
+  if (shared && S.flow(shared).done) {
+    A = shared;
+    lastResult = S.recommendAll(A);
+    lastFlow = S.flow(A);
+    hero.set(1, true, false);
+    renderResults(lastResult, lastFlow);
+    show("result");
+  } else {
+    // An incomplete or malformed link is ignored, so the questionnaire always starts empty.
+    clearUrl();
+    renderAsk({ focus: false });
+  }
 })();

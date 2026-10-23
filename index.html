@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Quantum Simulator Selector</title>
-<meta name="description" content="Prototype of the automated simulator selector proposed as future work: asks about the circuits, output and hardware and returns the fastest measured configuration.">
+<meta name="description" content="Prototype of the automated simulator selector proposed as future work: asks about the circuits, output and hardware, or reads an OpenQASM file, and returns the fastest measured configuration with the measurements behind it.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Michroma&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body>
 <div class="wrap">
@@ -17,7 +17,7 @@
     <div class="hero-text">
       <p class="eyebrow">Prototype · Future work, Section 6.3</p>
       <h1>Quantum Simulator Selector</h1>
-      <p class="lede">Answer a few questions about your circuits and your hardware. The selector walks the two-level framework of Section 5.8, first the simulation method, then the backend, and returns the fastest configuration measured in this dissertation, with the evidence behind it.</p>
+      <p class="lede">Answer a few questions about your circuits and your hardware, or read your circuit from an OpenQASM file. The selector walks the two-level framework of Section 5.8, first the simulation method, then the backend, and returns the fastest configuration measured in this dissertation, with every backend measured at your size and a run configuration to start from.</p>
     </div>
     <div class="hero-bloch" aria-hidden="true">
       <canvas id="bloch" width="220" height="220"></canvas>
@@ -62,6 +62,7 @@
         </div>
         <div class="results-actions">
           <button class="btn ghost" id="changeBtn" type="button">Change answers</button>
+          <button class="btn ghost" id="linkBtn" type="button">Copy link</button>
           <button class="btn ghost" id="copyBtn" type="button">Copy summary</button>
           <button class="btn" id="newBtn" type="button">New query</button>
           <span class="status-msg" id="copyStatus" role="status"></span>
@@ -79,18 +80,40 @@
             <p class="subhead">Decision path</p>
             <div id="path"></div>
           </div>
+          <div class="side-card">
+            <p class="subhead">Outside what was measured</p>
+            <div id="outside"></div>
+          </div>
         </aside>
       </div>
+    </section>
+
+    <!-- Tools, available with or without a query -->
+    <section class="tools" aria-labelledby="toolsHeading">
+      <h2 class="tools-h" id="toolsHeading">Tools</h2>
+      <details class="tool" id="memTool">
+        <summary><span class="tool-t">Memory calculator</span><span class="tool-d">How much memory a state needs on each device, and where it fits</span></summary>
+        <div id="memToolBody"></div>
+      </details>
+      <details class="tool" id="cmpTool">
+        <summary><span class="tool-t">Compare two configurations</span><span class="tool-d">Measured times of one circuit in two execution regimes, side by side</span></summary>
+        <div id="cmpToolBody"></div>
+      </details>
     </section>
   </main>
 
   <footer class="foot">
-    <p>Based on the MSc dissertation <i>Accelerating Quantum Circuit Simulation with NVIDIA GPUs</i>, Madalena Barros, Instituto Superior Técnico, 2026.</p>
+    <p>Based on the MSc dissertation <i>Accelerating Quantum Circuit Simulation with NVIDIA GPUs</i>, Madalena Barros, Instituto Superior Técnico, 2026. Times are those plotted in Chapter 5; estimates and interpolations are marked wherever they appear.</p>
   </footer>
 
 </div>
-<script src="js/rules.js"></script>
-<script src="js/bloch.js"></script>
-<script src="js/app.js"></script>
+<script src="js/data.js?v=4"></script>
+<script src="js/rules.js?v=4"></script>
+<script src="js/evidence.js?v=4"></script>
+<script src="js/qasm.js?v=4"></script>
+<script src="js/runconfig.js?v=4"></script>
+<script src="js/tools.js?v=4"></script>
+<script src="js/bloch.js?v=4"></script>
+<script src="js/app.js?v=4"></script>
 </body>
 </html>

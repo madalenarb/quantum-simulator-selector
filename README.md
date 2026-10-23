@@ -1,23 +1,73 @@
 # Quantum Simulator Selector (prototype)
 
-A mock of the automated selector proposed in Section 6.3 of the dissertation. It asks the
-researcher what they need, walks the two-level framework of Section 5.8 (simulation method,
-then backend), and returns the fastest configuration measured in Chapter 5, with the evidence,
-the conditions under which it holds, the memory the state needs, and the decision path.
+A working prototype of the automated selector proposed in Section 6.3 of the dissertation. It
+asks the researcher what they need, or reads their circuit from an OpenQASM file, walks the
+two-level framework of Section 5.8 (simulation method, then backend), and returns the fastest
+configuration measured in Chapter 5, with the measurements behind it, every other backend
+measured at that size, a run configuration to start from, and the limits of the measurements.
 
 ## How it works
 
 1. **Questionnaire.** One question at a time, each a gate on a qubit wire, while the page
-   shows "Measuring". Circuits and hardware are multi-select; an unlisted circuit can be named
-   and classified, or marked "Not sure". Answered gates can be changed at any time.
+   shows "Measuring". Circuits and hardware are multi-select. An unlisted circuit can be read
+   from an OpenQASM 2 or 3 file (or pasted), or named and classified by hand, or marked
+   "Not sure". Answered gates can be changed at any time.
 2. **Collapse.** When the last answer is in, a short sequence ("Collapsing the state…") runs
    while the Bloch sphere collapses. It can be skipped.
-3. **Readout.** One outcome per structure class (and per hardware, if both were chosen), with
-   the measured evidence, the conditions, the memory meter and the decision path. "Change
-   answers" reopens the questionnaire in review mode, where edits wait for "Measure again".
+3. **Readout.** One outcome per structure class (and per hardware, if both were chosen). Each
+   outcome has
+   - the evidence and the conditions under which it holds;
+   - **Measurements**: a chart of the series it rests on, with your size marked, and a table
+     of every backend measured at that size, ranked by time, with its ratio to the fastest and
+     one observation from Chapter 5;
+   - **Run configuration**: a script or C program set up the way the dissertation ran that
+     backend (versions of Table 4.3, layouts of Table 4.5, double precision), with the
+     benchmark circuit of the structure class to replace with yours.
 
-"See an example result" on the first screen runs a sample query (QFT, GHZ and Grover search,
-30 qubits, CPUs and GPUs).
+   The side column shows the memory the state needs on every platform, the decision path, and
+   what lies outside the measurements for this query.
+
+"See an example result" runs a sample query (QFT, GHZ and Grover search, 30 qubits, CPUs and
+GPUs). **Copy link** copies a link that reopens the same result; the bare address always
+opens an empty questionnaire, and "New query" clears the link from the address bar.
+
+The **Tools** at the bottom work with or without a query: a memory calculator (state vector
+or density matrix, double or single precision, any number of devices, with the exchange buffer
+of distributed QuEST) and a side-by-side comparison of two execution configurations from the
+measured series.
+
+## How the outcome is chosen
+
+The rules in `js/rules.js` follow Tables 5.9 and 5.10 and Figure 5.13, refined by the text of
+Chapter 5 where it gives sizes. Where a regime has a measured sweep (Figure 5.1), the rule is
+checked against the measurement at the size asked. If another backend measured more than 10 %
+faster there, the outcome switches to it and says so; within 10 % the rule stands and the near
+tie is listed under the conditions. Points that the Figure 5.1 caption marks as not full-node
+times never decide an outcome.
+
+Times are the values plotted in Chapter 5. Values between two measured sizes are interpolated
+(marked ~), and values beyond the end of a series are extrapolated with at least a doubling per
+qubit for state vectors and a fourfold growth for density matrices (marked ≈). Configurations
+that cannot hold the state show no time.
+
+## OpenQASM reader
+
+`js/qasm.js` reads the subset that circuit libraries export: registers (`qreg`, `qubit`),
+gate calls with parameters and broadcast over registers, the gates of `qelib1.inc` and
+`stdgates.inc`, user-defined gates (expanded), the modifiers `ctrl`, `negctrl`, `inv` and
+`pow`, measurement, reset, barrier and `if`. Loops and subroutines are reported as
+unsupported. From the expanded circuit it counts qubits, gates and depth and suggests a
+structure class:
+
+- **Clifford gates only**, by an exact test on the gate matrices, angles included;
+- **Low, bounded entanglement** when the gates crossing any cut of the qubit chain can raise
+  its Schmidt rank to at most 4;
+- **Densely connected** when half of all qubit pairs share a gate, or most two-qubit gates
+  join qubits that are not neighbours;
+- **Entanglement that grows with depth** otherwise.
+
+The last three are heuristics, so the result marks the circuit as "From your file" and the
+class can be changed by hand. Files stay in the browser; nothing is uploaded.
 
 ## Open it
 
@@ -32,20 +82,34 @@ python3 -m http.server 8000
 
 Then open http://localhost:8000 in a browser.
 
-**Option 2:** double-click `index.html`. It also works from the file system.
+**Option 2:** double-click `index.html`. It also works from the file system; copied links
+then point to the published site.
 
 The fonts load from Google Fonts when online; offline, the page falls back to system fonts.
+The page stores nothing in the browser.
 
 ## Files
 
-- `index.html` — page structure for the three phases
-- `css/style.css` — visual design (tokens at the top)
-- `js/rules.js` — the questions, the circuit catalogue (each circuit's structure class and
+- `index.html`: page structure for the three phases and the tools
+- `css/style.css`: visual design (tokens at the top)
+- `js/data.js`: the measured times behind every chart and ranking, generated by
+  `tools/make_data.py`; do not edit by hand
+- `js/rules.js`: the questions, the circuit catalogue (each circuit's structure class and
   whether it was measured, matched by gate set, or is inconclusive), the memory limits, and
-  every decision rule with its measured numbers and section references. New backends or
-  workloads are added here.
-- `js/app.js` — the interface (questionnaire, validation, collapse sequence, readout, copy summary)
-- `js/bloch.js` — the Bloch spheres, which tilt as questions are answered and collapse at the readout
+  every decision rule with its section references. New backends or workloads are added here.
+- `js/evidence.js`: the charts, the rankings with one observation per backend, and the
+  interpolation and extrapolation rules
+- `js/qasm.js`: the OpenQASM reader and its structure analysis
+- `js/runconfig.js`: the run-configuration templates
+- `js/tools.js`: the memory calculator, the comparison of two configurations, and the list of
+  limits of the measurements
+- `js/app.js`: the interface (questionnaire, validation, links, collapse sequence, readout,
+  copy summary)
+- `js/bloch.js`: the Bloch spheres, which tilt as questions are answered and collapse at the
+  readout
+- `tools/make_data.py` and `tools/inputs/`: rebuild `js/data.js` from the thesis data files
+  (`python tools/make_data.py DIR`, where `DIR` holds `values.xlsx`, `QUEST_GPU_FINAL.md`
+  and `tn_figure_values.csv`; see the header of the script)
 
 ## Scope
 
@@ -53,4 +117,5 @@ Recommendations reflect the measurements of this dissertation: Deucalion x86 nod
 EPYC 7742), A100-40 and A100-80 nodes with four GPUs, and an i9-13900KS workstation for the
 density-matrix runs, all in double precision. Results outside the measured range, and states
 that no platform of the study holds, are flagged as such. Other circuits, builds or machines
-may rank differently.
+may rank differently, and the run configurations are templates to adapt, not the benchmark
+harness itself.
