@@ -3,8 +3,8 @@
  *
  * Every recommendation below is a measured result from Chapter 5 of the dissertation
  * (Deucalion x86 and A100 nodes, i9-13900KS for density matrices, double precision).
- * To extend the selector with new backends or workloads, add questions to QUESTIONS,
- * a branch to flow(), and a case to recommend(). The interface reads only these exports.
+ * To extend the selector, add circuits to CIRCUITS, questions to QUESTIONS, a branch to
+ * flow() and a case to recommend(). The interface reads only the exports at the bottom.
  */
 (function () {
   "use strict";
@@ -21,8 +21,36 @@
     "Qibo": "#5A4FCF",
     "Qibo Clifford": "#5A4FCF",
     "QuEST": "#44AA99",
-    "Trajectory sampling": "#5F6C86"
+    "Trajectory sampling": "#5F6C86",
+    "No feasible state vector": "#5F6C86",
+    "Beyond the GPUs used": "#5F6C86"
   };
+
+  // Source repositories, linked from every backend name in the readout.
+  var REPOS = {
+    "Qiskit Aer": "https://github.com/Qiskit/qiskit-aer",
+    "Qiskit Aer Stabilizer": "https://github.com/Qiskit/qiskit-aer",
+    "CUDA-Q": "https://github.com/NVIDIA/cuda-quantum",
+    "Qulacs": "https://github.com/qulacs/qulacs",
+    "mpiQulacs": "https://github.com/qulacs/qulacs",
+    "Qibo": "https://github.com/qiboteam/qibo",
+    "Qibo Clifford": "https://github.com/qiboteam/qibo",
+    "qibojit": "https://github.com/qiboteam/qibojit",
+    "QuEST": "https://github.com/QuEST-Kit/QuEST"
+  };
+
+  var UNITS = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"];
+  // Size of 2^l bytes, as HTML.
+  function bytesLog2(l) {
+    var u = Math.floor(l / 10);
+    if (u > 8) return "2<sup>" + l + "</sup> bytes";
+    return Math.pow(2, l - 10 * u) + " " + UNITS[u];
+  }
+  function svBytes(n) { return bytesLog2(n + 4); }
+
+  // Largest double-precision state each configuration holds (Sections 5.3, 5.4 and 5.8;
+  // a Deucalion x86 job has 242 GiB per node, so 64 nodes hold up to n = 39).
+  var LIMITS = { cpuNode: 33, cpuMeasured: 34, cpuCluster: 39, gpu8: 35, gpu16: 36, dm: 16 };
 
   var QUESTIONS = {
     noise: {
@@ -39,17 +67,10 @@
     },
     structure: {
       gate: "U",
-      short: "Circuit",
-      prompt: "Which best describes your circuit?",
-      help: "The structure decides whether a method cheaper than the dense state vector applies.",
-      options: function () {
-        return [
-          { v: "clifford", t: "Clifford gates only", d: "H, S, CNOT and Paulis, as in error-correction circuits" },
-          { v: "lowent", t: "Low, bounded entanglement", d: "GHZ or a one-layer hardware-efficient ansatz" },
-          { v: "deep", t: "Entanglement that grows with depth", d: "A hardware-efficient ansatz with many layers" },
-          { v: "dense", t: "Densely connected, non-Clifford", d: "The QFT or arithmetic subroutines of Shor’s algorithm" }
-        ];
-      }
+      short: "Circuits",
+      multi: "circuits",
+      prompt: "Which circuits will you simulate?",
+      help: "Pick one or several. Each maps to a structure class, and the structure decides whether a method cheaper than the dense state vector applies. Circuits that were not benchmarked are mapped by their structure and marked as inconclusive. Not listed? Describe yours under Another circuit, at the end of the list."
     },
     output: {
       gate: "M",
@@ -61,8 +82,8 @@
           { v: "samples", t: "Measurement samples", d: "Counts or bitstrings (weak simulation)" },
           { v: "state", t: "The full state", d: "Amplitudes, fidelity or exact expectation values (strong simulation)" }
         ];
-        if (a.structure === "clifford") {
-          list.splice(1, 0, { v: "tableau", t: "The stabiliser tableau", d: "The state as Pauli generators, without sampling" });
+        if (groupsOf(a).some(function (g) { return g.cls === "clifford"; })) {
+          list.splice(1, 0, { v: "tableau", t: "The stabiliser tableau", d: "For the Clifford circuits; the others then return the full state" });
         }
         return list;
       }
@@ -71,16 +92,21 @@
       gate: "n",
       short: "Qubits",
       prompt: "How many qubits?",
-      help: "A dense state vector needs 16 bytes per amplitude in double precision, so its memory doubles with every qubit."
+      help: function (a) {
+        return a.noise === "yes"
+          ? "A density matrix has 4ⁿ elements of 16 bytes in double precision, so its memory grows fourfold with every qubit."
+          : "A dense state vector needs 16 bytes per amplitude in double precision, so its memory doubles with every qubit. Stabiliser and tensor-network methods avoid that growth.";
+      }
     },
     hw: {
       gate: "HW",
       short: "Hardware",
+      multi: "toggle",
       prompt: "Which hardware can you use?",
-      help: "The second level of the framework picks the backend for the execution regime that holds the state.",
+      help: "Pick one or both. The second level of the framework picks the backend for each execution regime that holds the state.",
       options: function () {
         return [
-          { v: "cpu", t: "CPUs only", d: "x86 nodes with two AMD EPYC 7742 (128 cores), up to 64 nodes" },
+          { v: "cpu", t: "CPUs", d: "x86 nodes with two AMD EPYC 7742 (128 cores), up to 64 nodes" },
           { v: "gpu", t: "NVIDIA A100 GPUs", d: "40 or 80 GB each, four per node over NVLink" }
         ];
       }
@@ -115,31 +141,122 @@
       gate: "G",
       short: "GPUs",
       prompt: "How many A100-80 GPUs will hold the state?",
-      help: "From 35 qubits the state (512 GiB) no longer fits one node of four GPUs, so it must cross InfiniBand.",
+      help: "At 35 qubits the 512 GiB state no longer fits one node of four GPUs, so the exchanges cross InfiniBand.",
       options: function () {
         return [
-          { v: "eight", t: "Eight GPUs", d: "Two nodes" },
-          { v: "sixteen", t: "Sixteen GPUs", d: "Four nodes" }
+          { v: "eight", t: "Eight GPUs", d: "Two nodes, 640 GB in total" },
+          { v: "sixteen", t: "Sixteen GPUs", d: "Four nodes, 1280 GB in total" }
         ];
       }
     }
   };
 
-  // Largest double-precision state vector each platform holds (Sections 5.3, 5.4 and 5.8).
+  // The four structure classes of the first level (Table 5.9).
+  var CLASSES = {
+    clifford: { name: "Clifford gates only", d: "H, S, CNOT and Paulis; polynomial-time stabiliser simulation applies" },
+    lowent: { name: "Low, bounded entanglement", d: "Schmidt rank stays small across every cut, so tensor networks reach far" },
+    deep: { name: "Entanglement that grows with depth", d: "Local gates whose entanglement builds up layer by layer" },
+    dense: { name: "Densely connected, non-Clifford", d: "Every pair of qubits interacts; the dense state vector reached furthest" }
+  };
+  var CLASS_ORDER = ["clifford", "lowent", "deep", "dense"];
+  // Choices for a circuit the researcher describes, including "not sure".
+  var OTHER_CLASSES = CLASS_ORDER.concat(["unsure"]);
+  var UNSURE = { name: "Not sure", d: "Treated as densely connected, which the dense state vector covers for any circuit" };
+
+  // How confidently a circuit maps to its class.
+  var CONFIDENCE = {
+    measured: { label: "Measured", d: "Benchmarked in this dissertation" },
+    gateset: { label: "By gate set", d: "Not benchmarked, but its gate set fixes the class" },
+    inconclusive: { label: "Inconclusive", d: "Not benchmarked; mapped by its structure, so the outcome is a best guess" },
+    user: { label: "Your mapping", d: "Classified by you" },
+    unsure: { label: "Structure unknown", d: "Treated as densely connected" }
+  };
+
+  // Catalogue of circuits a researcher can pick. Add entries here as new workloads are measured.
+  var CIRCUITS = [
+    { id: "clifford", name: "Random Clifford circuit", cls: "clifford", conf: "measured", note: "The ten-layer benchmark of Chapter 4" },
+    { id: "qec", name: "Error-correction syndrome extraction", cls: "clifford", conf: "gateset", note: "Clifford gates and Pauli measurements only" },
+    { id: "bv", name: "Bernstein–Vazirani", cls: "clifford", conf: "gateset", note: "H, CNOT and Z gates only" },
+    { id: "ghz", name: "GHZ state preparation", cls: "lowent", conf: "measured", note: "Tensor-network runs up to n = 500" },
+    { id: "hea1", name: "Hardware-efficient ansatz, one layer", cls: "lowent", conf: "measured", note: "Tensor-network runs up to n = 500" },
+    { id: "hea", name: "Hardware-efficient ansatz, several layers", cls: "deep", conf: "measured", note: "Eight CNOT rings as a state vector; twenty layers as a tensor network" },
+    { id: "trotter", name: "Trotterised Hamiltonian simulation", cls: "deep", conf: "inconclusive", note: "Nearest-neighbour gates whose entanglement grows with simulated time" },
+    { id: "qaoa", name: "QAOA", cls: "deep", conf: "inconclusive", note: "Entanglement depends on the problem graph and the number of layers" },
+    { id: "qft", name: "Quantum Fourier transform", cls: "dense", conf: "measured", note: "The benchmark circuit of Chapter 4" },
+    { id: "qpe", name: "Quantum phase estimation", cls: "dense", conf: "inconclusive", note: "Ends in an inverse QFT, but its controlled unitaries were not benchmarked" },
+    { id: "shor", name: "Shor’s algorithm, modular arithmetic", cls: "dense", conf: "inconclusive", note: "Arithmetic subroutines are proposed as future work" },
+    { id: "grover", name: "Grover search", cls: "dense", conf: "inconclusive", note: "Multi-controlled gates couple all qubits" },
+    { id: "uccsd", name: "VQE with a UCCSD ansatz", cls: "dense", conf: "inconclusive", note: "Long-range excitation gates across the register" },
+    { id: "rcs", name: "Random circuit sampling", cls: "dense", conf: "inconclusive", note: "Entanglement saturates quickly, the hardest case for tensor networks" }
+  ];
+  var CIRCUIT_BY_ID = {};
+  CIRCUITS.forEach(function (c) { CIRCUIT_BY_ID[c.id] = c; });
+
+  // n: largest double-precision state the platform holds; measured: largest size run on it in
+  // the dissertation (null if the platform was not used for this representation).
   var SV_PLATFORMS = [
-    { label: "One A100-40", n: 31 },
-    { label: "One A100-80", n: 32 },
-    { label: "One x86 node", n: 33 },
-    { label: "One GPU node, 4× A100-80", n: 34 },
-    { label: "Two GPU nodes, 8× A100-80", n: 35 }
+    { label: "One A100-40", n: 31, measured: 31 },
+    { label: "One A100-80", n: 32, measured: 32 },
+    { label: "One x86 node", n: 33, measured: 30 },
+    { label: "One GPU node, 4× A100-80", n: 34, measured: 34 },
+    { label: "Two GPU nodes, 8× A100-80", n: 35, measured: 35 },
+    { label: "Four GPU nodes, 16× A100-80", n: 36, measured: 35 },
+    { label: "64 x86 nodes", n: 39, measured: 34 }
   ];
   var DM_PLATFORMS = [
-    { label: "One x86 job, 242 GiB", n: 16 }
+    { label: "i9-13900KS workstation", n: 16, measured: 13 },
+    { label: "One x86 job, 242 GiB", n: 16, measured: null }
   ];
 
   function answered(a, id) {
-    return a[id] !== undefined && a[id] !== null;
+    if (id === "structure") return (a.circuits && a.circuits.length > 0) || !!(a.other && a.other.name && a.other.cls);
+    var v = a[id];
+    if (Array.isArray(v)) return v.length > 0;
+    return v !== undefined && v !== null;
   }
+
+  // Selected circuits grouped by structure class, in a fixed order.
+  function groupsOf(a) {
+    var byCls = {};
+    (a.circuits || []).forEach(function (id) {
+      var c = CIRCUIT_BY_ID[id];
+      if (!c) return;
+      (byCls[c.cls] = byCls[c.cls] || []).push(c);
+    });
+    if (a.other && a.other.name && a.other.cls) {
+      var unsure = a.other.cls === "unsure";
+      var cls = unsure ? "dense" : a.other.cls;
+      (byCls[cls] = byCls[cls] || []).push({
+        id: "other", name: a.other.name, cls: cls,
+        conf: unsure ? "unsure" : "user",
+        note: unsure ? "Structure unknown, so treated as densely connected" : "Classified by you"
+      });
+    }
+    return CLASS_ORDER.filter(function (k) { return byCls[k]; }).map(function (k) {
+      var list = byCls[k];
+      var doubtful = list.filter(function (c) { return c.conf === "inconclusive" || c.conf === "user" || c.conf === "unsure"; });
+      return {
+        cls: k,
+        circuits: list,
+        unsure: doubtful,
+        conf: doubtful.length === list.length ? "inconclusive" : doubtful.length ? "mixed" : "measured"
+      };
+    });
+  }
+
+  // The tableau only exists for Clifford circuits; the others then need the full state.
+  function effOutput(a, cls) {
+    return a.output === "tableau" && cls !== "clifford" ? "state" : a.output;
+  }
+
+  function hwList(a) {
+    var h = a.hw;
+    if (!h) return [];
+    return Array.isArray(h) ? h : [h];
+  }
+
+  function isTN(m) { return m === "tn" || m === "tn-deep"; }
+  function isStab(m) { return m === "stab-aer" || m === "stab-qibo"; }
 
   function method(a) {
     if (a.noise === "yes") return "dm";
@@ -149,10 +266,19 @@
       if (o === "tableau") return "stab-qibo";
       return "sv";
     }
-    if (s === "lowent" && o === "samples") return "tn";
-    if (s === "deep" && o === "samples" && a.n >= 35) return "tn-deep";
+    if (!a.noTN && s === "lowent" && o === "samples") return "tn";
+    if (!a.noTN && s === "deep" && o === "samples" && a.n >= 35) return "tn-deep";
     return "sv";
   }
+
+  function groupBase(a, g) {
+    var b = {};
+    for (var k in a) b[k] = a[k];
+    b.structure = g.cls;
+    b.output = effOutput(a, g.cls);
+    return b;
+  }
+  function methodOf(a, g) { return method(groupBase(a, g)); }
 
   // Ordered list of the questions this query needs; done is true when all are answered.
   function flow(a) {
@@ -168,22 +294,34 @@
     if (!answered(a, "output")) return { qs: qs, done: false };
     qs.push("n");
     if (!answered(a, "n")) return { qs: qs, done: false };
-    if (method(a) !== "sv") return { qs: qs, done: true };
+
+    var groups = groupsOf(a);
+    var methods = groups.map(function (g) { return methodOf(a, g); });
+    var anyTN = methods.some(isTN);
+    var anySV = methods.some(function (m) { return m === "sv"; });
+    // Hardware only matters for tensor networks and for state vectors that some machine holds.
+    if (!anyTN && !(anySV && a.n <= LIMITS.cpuCluster)) return { qs: qs, done: true };
     qs.push("hw");
     if (!answered(a, "hw")) return { qs: qs, done: false };
-    if (a.hw === "cpu") {
-      if (a.n >= 34) return { qs: qs, done: true };
+
+    var hw = hwList(a);
+    var hasGpu = hw.indexOf("gpu") !== -1, hasCpu = hw.indexOf("cpu") !== -1;
+    // Tensor networks ran on A100 GPUs; without GPUs those groups fall back to the state vector.
+    var svGroups = groups.filter(function (g, i) { return methods[i] === "sv" || (isTN(methods[i]) && !hasGpu); });
+    if (!svGroups.length || a.n > LIMITS.cpuCluster) return { qs: qs, done: true };
+
+    if (hasCpu && a.n <= LIMITS.cpuNode) {
       qs.push("cpuScale");
-      return { qs: qs, done: answered(a, "cpuScale") };
+      if (!answered(a, "cpuScale")) return { qs: qs, done: false };
     }
-    if (a.n <= 23) return { qs: qs, done: true };
-    if (a.n >= 35) {
+    if (hasGpu && a.n === LIMITS.gpu8) {
       qs.push("gpuCount");
-      return { qs: qs, done: answered(a, "gpuCount") };
+      if (!answered(a, "gpuCount")) return { qs: qs, done: false };
     }
-    if (a.n <= 31 && a.output === "state") {
+    var needsState = svGroups.some(function (g) { return effOutput(a, g.cls) === "state"; });
+    if (hasGpu && a.n >= 24 && a.n <= 31 && needsState) {
       qs.push("host");
-      return { qs: qs, done: answered(a, "host") };
+      if (!answered(a, "host")) return { qs: qs, done: false };
     }
     return { qs: qs, done: true };
   }
@@ -195,13 +333,13 @@
   }
   var CIRCUIT_NAME = { qft: "QFT", hea: "HEA", clifford: "Clifford circuit" };
 
-  function svExtraCaveats(a, c) {
+  function svExtraCaveats(a) {
     var list = [];
     if (a.structure === "lowent") {
       list.push("State-vector rankings were measured on the HEA, the closest benchmark to a low-entanglement circuit.");
       if (a.output === "state") list.push("A tensor-network contraction that returns the full state reached the GPU memory limit at " + N + " = 30, before the state vector did.");
     }
-    if (a.structure === "deep" && a.output === "samples") {
+    if (a.structure === "deep" && a.output === "samples" && !a.noTN) {
       list.push("A tensor network is also viable for deep circuits: with twenty HEA layers it reached " + N + " = 36, but the state vector holds these sizes.");
     }
     if (a.structure === "clifford" && a.output === "state") {
@@ -210,21 +348,50 @@
     return list;
   }
 
+  // No machine in the study holds the state.
+  function infeasible(a) {
+    var n = a.n, r = {
+      b: "No feasible state vector",
+      regime: "Dense state vector · " + svBytes(n),
+      ev: "At " + N + " = " + n + " a double-precision state vector needs " + svBytes(n) + ", more than the 64 x86 nodes of this dissertation hold together (about 15 TiB of job memory, enough up to " + N + " = 39).",
+      out: "Beyond the memory of every platform used in this dissertation.",
+      caveats: []
+    };
+    if (a.structure === "clifford") r.alt = "<b>Qiskit Aer Stabilizer</b> or <b>Qibo Clifford</b>, if samples or the tableau are enough";
+    else if (a.structure === "lowent") r.alt = "a <b>CUDA-Q</b> tensor network on an A100, which reached " + N + " = 500 when samples suffice";
+    else if (a.structure === "deep") r.alt = "a <b>CUDA-Q</b> tensor network on an A100, which reached " + N + " = 36 with twenty HEA layers and goes further for shallower circuits";
+    else r.note = "No method measured here reaches this size for densely connected circuits; the tensor network of the QFT reached its time limit at " + N + " = 26.";
+    return r;
+  }
+
+  // The state needs more than the sixteen GPUs of the study.
+  function gpuBeyond(a) {
+    var n = a.n;
+    return {
+      b: "Beyond the GPUs used",
+      regime: "Dense state vector · " + svBytes(n) + " · more than sixteen A100-80 hold",
+      ev: "The sixteen A100-80 GPUs used in this dissertation hold a double-precision state up to " + N + " = 36 (1 TiB), and at " + N + " = " + n + " it needs " + svBytes(n) + ".",
+      alt: n <= LIMITS.cpuCluster ? "<b>mpiQulacs</b> on 64 x86 nodes, which hold the state up to " + N + " = 39" : null,
+      out: "Beyond the GPU memory used in this dissertation.",
+      caveats: []
+    };
+  }
+
   function svCPU(a, c) {
     var n = a.n, r;
-    if (n >= 34) {
+    if (n > LIMITS.cpuCluster) return infeasible(a);
+    if (n > LIMITS.cpuNode) {
       r = {
         b: "mpiQulacs",
         regime: "Dense state vector · 64 x86 nodes · one MPI rank per node",
         ev: "From " + N + " = 34 the state (256 GiB) needs more than one node, and mpiQulacs was the fastest backend to reach that size, on 64 nodes with 4 GiB of state per node (Section 5.3).",
         caveats: ["Multi-node series measured on the QFT."]
       };
-      if (n >= 35) r.out = "The multi-node series ended at " + N + " = 34.";
+      if (n > LIMITS.cpuMeasured) r.out = "The multi-node series ended at " + N + " = 34; 64 x86 nodes hold the state up to " + N + " = 39 (" + svBytes(39) + ").";
       return r;
     }
     var s = a.cpuScale;
     if (s === "thread") {
-      var qulacsEv = "On one thread, Qulacs is at or near the front on every circuit: each gate goes straight to a native AVX2 kernel, at 0.6 to 16 µs per gate at " + N + " = 9 against 26 to 40 µs for Qiskit Aer (Section 5.1).";
       if (c === "qft" && n >= 21 && n <= 28) {
         r = {
           b: "Qiskit Aer",
@@ -254,7 +421,11 @@
           alt: "<b>Qiskit Aer</b> with 128 threads, if a full node is available"
         };
       } else {
-        r = { b: "Qulacs", regime: "Dense state vector · one CPU thread", ev: qulacsEv };
+        r = {
+          b: "Qulacs",
+          regime: "Dense state vector · one CPU thread",
+          ev: "On one thread, Qulacs is at or near the front on every circuit: each gate goes straight to a native AVX2 kernel, at 0.6 to 16 µs per gate at " + N + " = 9 against 26 to 40 µs for Qiskit Aer (Section 5.1)."
+        };
       }
       if (n >= 31) r.out = "The single-thread sweeps ended at " + N + " = 30; one node holds the state up to " + N + " = 33.";
       return r;
@@ -310,6 +481,7 @@
 
   function svGPU(a, c) {
     var n = a.n, r;
+    if (n > LIMITS.gpu16) return gpuBeyond(a);
     if (n <= 23) {
       return {
         b: "Qulacs",
@@ -318,13 +490,14 @@
         caveats: ["Its timed call excludes any copy of the state to host memory."]
       };
     }
-    if (n >= 35) {
-      if (a.gpuCount === "sixteen") {
+    if (n >= LIMITS.gpu8) {
+      var sixteen = n === LIMITS.gpu16 || a.gpuCount === "sixteen";
+      if (sixteen) {
         r = {
           b: "Qiskit Aer",
           regime: "Dense state vector · 16 A100-80 over four nodes",
           ev: "On sixteen GPUs, Qiskit Aer recovers more of the loss from crossing nodes and runs 1.1 to 1.3 times faster than CUDA-Q (Section 5.4.2).",
-          alt: "<b>CUDA-Q</b>, ahead on eight GPUs"
+          alt: n === LIMITS.gpu8 ? "<b>CUDA-Q</b>, ahead on eight GPUs" : null
         };
       } else {
         r = {
@@ -338,7 +511,7 @@
         "Under the default UCX settings of Deucalion, each GPU swapped about 0.9 GB/s across nodes; a tuned transport could change this order.",
         "Multi-GPU series measured on the QFT."
       ];
-      if (n >= 36) r.out = "The multi-GPU series ended at " + N + " = 35 (512 GiB).";
+      if (n === LIMITS.gpu16) r.out = "The multi-GPU series ended at " + N + " = 35. Sixteen A100-80 hold the 1 TiB state at " + N + " = 36; eight do not.";
       return r;
     }
     var onNode = {
@@ -401,7 +574,7 @@
       b: "CUDA-Q",
       regime: "Dense state vector · one A100-40 · state copied to host",
       ev: "With the state copied to the host, CUDA-Q is the fastest on the HEA and the Clifford circuit from " + N + " = 25, about 3 times faster than Qulacs on the HEA and 1.3 times on the Clifford circuit at " + N + " = 30 (Section 5.1).",
-      alt: c === "clifford" ? "<b>Qulacs</b> and <b>qibojit</b> also finish ahead of Qiskit Aer on this circuit" : "<b>Qulacs</b>, which leads up to " + N + " = 24",
+      alt: c === "clifford" ? "<b>Qulacs</b> and <b>qibojit</b>, which also finish ahead of Qiskit Aer on this circuit" : "<b>Qulacs</b>, which leads up to " + N + " = 24",
       caveats: [hostCaveat]
     };
   }
@@ -421,7 +594,7 @@
           alt: "<b>Qiskit Aer</b>, the fastest from " + N + " ≈ 8",
           caveats: channelCaveats.slice()
         };
-      } else if (n <= 16) {
+      } else if (n <= LIMITS.dm) {
         r = {
           b: "Qiskit Aer",
           regime: "Density matrix · CPU",
@@ -440,10 +613,9 @@
         };
       }
       r.kind = "dm";
-      r.platform = "i9-13900KS workstation";
       return r;
     }
-    if (m === "stab-aer" || m === "stab-qibo") {
+    if (isStab(m)) {
       r = m === "stab-aer" ? {
         b: "Qiskit Aer Stabilizer",
         regime: "Stabiliser tableau · sampled output · one CPU thread",
@@ -488,19 +660,77 @@
     }
     var c = circuitClass(a);
     r = a.hw === "cpu" ? svCPU(a, c) : svGPU(a, c);
-    r.caveats = (r.caveats || []).concat(svExtraCaveats(a, c));
+    r.caveats = (r.caveats || []).concat(svExtraCaveats(a));
     r.kind = "sv";
     return r;
+  }
+
+  // One block per structure class, each with one outcome per usable hardware regime.
+  function recommendAll(a) {
+    if (a.noise === "yes") {
+      return { kind: "dm", blocks: [{ cls: null, circuits: [], unsure: [], conf: "measured", outcomes: [{ hw: null, rec: recommend(a) }] }] };
+    }
+    var hw = hwList(a);
+    var hasGpu = hw.indexOf("gpu") !== -1;
+    var blocks = groupsOf(a).map(function (g) {
+      var base = groupBase(a, g);
+      var m = method(base);
+      var outcomes = [];
+      if (isStab(m)) {
+        outcomes.push({ hw: null, rec: recommend(base) });
+      } else if (isTN(m) && hasGpu) {
+        base.hw = "gpu";
+        outcomes.push({ hw: null, rec: recommend(base) });
+      } else {
+        var noTN = isTN(m);
+        if (noTN) base.noTN = true;
+        if (a.n > LIMITS.cpuCluster) {
+          var inf = infeasible(base);
+          inf.kind = "sv";
+          outcomes.push({ hw: null, rec: inf });
+        } else {
+          ["gpu", "cpu"].forEach(function (h) {
+            if (hw.indexOf(h) === -1) return;
+            var b = {};
+            for (var k in base) b[k] = base[k];
+            b.hw = h;
+            var rec = recommend(b);
+            if (noTN) rec.caveats.unshift("A tensor network would apply to this class, but those results were measured on A100 GPUs; on CPUs the state vector is the measured option.");
+            outcomes.push({ hw: h, rec: rec });
+          });
+        }
+      }
+      if (a.output === "tableau" && g.cls !== "clifford") {
+        outcomes.forEach(function (o) { o.rec.caveats.unshift("The tableau applies only to Clifford circuits, so these circuits are treated as needing the full state."); });
+      }
+      return { cls: g.cls, circuits: g.circuits, unsure: g.unsure, conf: g.conf, outcomes: outcomes };
+    });
+    return { kind: "sv", blocks: blocks };
   }
 
   window.Selector = {
     QUESTIONS: QUESTIONS,
     COLOURS: COLOURS,
+    REPOS: REPOS,
+    CLASSES: CLASSES,
+    CLASS_ORDER: CLASS_ORDER,
+    OTHER_CLASSES: OTHER_CLASSES,
+    UNSURE: UNSURE,
+    CONFIDENCE: CONFIDENCE,
+    CIRCUITS: CIRCUITS,
     SV_PLATFORMS: SV_PLATFORMS,
     DM_PLATFORMS: DM_PLATFORMS,
+    LIMITS: LIMITS,
+    bytesLog2: bytesLog2,
     flow: flow,
     method: method,
+    methodOf: methodOf,
+    groupsOf: groupsOf,
     recommend: recommend,
-    answered: answered
+    recommendAll: recommendAll,
+    answered: answered,
+    hwList: hwList,
+    isTN: isTN,
+    isStab: isStab
   };
 })();
