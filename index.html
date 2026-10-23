@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Quantum Simulator Selector</title>
+<meta name="description" content="Prototype of the automated simulator selector proposed as future work: answers a researcher's questions and returns the fastest measured configuration.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Michroma&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="hero-text">
+      <p class="eyebrow">Prototype · Future work, Section 6.3</p>
+      <h1>Quantum Simulator Selector</h1>
+      <p class="lede">Answer a few questions about your circuit and your hardware. The selector walks the two-level framework of Section 5.8, first the simulation method, then the backend, and returns the fastest configuration measured in this dissertation, with the evidence behind it.</p>
+    </div>
+    <div class="hero-bloch" aria-hidden="true">
+      <canvas id="bloch" width="220" height="220"></canvas>
+      <p class="bloch-caption" id="blochCaption">Superposition of candidates</p>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="questions" aria-labelledby="qHeading">
+      <div class="section-head">
+        <h2 id="qHeading">Your simulation</h2>
+        <button class="btn ghost small" id="resetTop" type="button">New query</button>
+      </div>
+      <ol class="steps" id="steps"></ol>
+    </section>
+
+    <aside class="result-col" aria-labelledby="rHeading">
+      <h2 id="rHeading" class="visually-hidden">Recommendation</h2>
+      <div class="result" id="result" aria-live="polite"></div>
+    </aside>
+  </main>
+
+  <footer class="foot">
+    <p>Recommendations are the fastest configurations measured in this dissertation: Deucalion x86 nodes (two AMD EPYC 7742, 128 cores), A100-40 and A100-80 nodes with four GPUs, and an i9-13900KS workstation for the density-matrix and roofline runs, all in double precision with the builds listed in Chapter 4. Other circuits, builds or machines may rank differently. The rules live in <code>js/rules.js</code>, so new measurements extend the selector without touching the interface.</p>
+  </footer>
+
+</div>
+<script src="js/rules.js"></script>
+<script src="js/bloch.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
