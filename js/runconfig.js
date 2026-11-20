@@ -1,6 +1,6 @@
 /*
  * Run-configuration templates: for each outcome, a script that sets the backend up the way
- * the dissertation ran it (versions of Table 4.3, layouts of Table 4.5, double precision),
+ * the dissertation ran it (versions of Table 4.3, layouts of Table 4.4, double precision),
  * with a builder for an example circuit of the structure class. They are starting points
  * to edit, not the harness of the dissertation.
  *
@@ -13,9 +13,9 @@
   var VERS = {
     "Qiskit Aer": "Qiskit Aer 0.17.2",
     "CUDA-Q": "CUDA-Q 0.14.0",
-    "Qulacs": "Qulacs 0.6.13 (CPU) and 0.6.11 (GPU)",
+    "Qulacs": "Qulacs 0.6.13, and 0.6.11 for the HEA points and the GPU runs",
     "mpiQulacs": "mpiQulacs 0.6.11, Open MPI 4.1.5",
-    "Qibo": "Qibo 0.3.1, qibojit 0.1.13",
+    "Qibo": "Qibo 0.3.1",
     "QuEST": "QuEST 4.2.0"
   };
   function head(lines, title, backend, notes) {
@@ -425,7 +425,7 @@
       "n = " + ctx.n,
       "circuit = build(n)  # applied gate by gate, without the optimiser, as in the dissertation",
       ""
-    ]).concat(timed("state = QuantumState(n); circuit.update_quantum_state(state)  # the timed call also allocates the state (Table 4.4)")).concat(
+    ]).concat(timed("state = QuantumState(n); circuit.update_quantum_state(state)  # the timed call also allocates the state (Section 5.1)")).concat(
       samples ? ["samples = state.sampling(1024)"] : []), "Qulacs, CPU state vector, " + (threads === 1 ? "one thread" : threads + " threads"), "Qulacs");
   }
   function qulacsGPU(ctx) {

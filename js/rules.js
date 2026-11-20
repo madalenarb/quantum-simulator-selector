@@ -3,10 +3,13 @@
  *
  * Every recommendation below is a measured result from Chapter 5 of the dissertation
  * (Deucalion x86 and A100 nodes, i9-13900KS for density matrices, double precision).
- * The measured times themselves live in js/data.js; where a rule and the measurements
- * disagree by more than 10 % at the size asked, the measurement decides (reconcile()).
+ * The rules follow the two-level framework of Section 5.8: Table 5.9 for the method,
+ * Table 5.10 for the backend, and the boxes of Figure 5.13, whose path figPath() returns
+ * for every query. The measured times themselves live in js/data.js; where a rule and
+ * the measurements disagree by more than 10 % at the size asked, the measurement decides
+ * (reconcile()) and the outcome says that it departs from the box of the figure.
  * To extend the selector, add circuits to CIRCUITS, questions to QUESTIONS, a branch to
- * flow() and a case to recommend(). The interface reads only the exports at the bottom.
+ * flow() and figPath() and a case to recommend(). The interface reads only the exports.
  */
 (function () {
   "use strict";
@@ -14,25 +17,31 @@
   var N = "<i>n</i>";
   var DATA = window.SelectorData;
 
-  // Thesis colours of each backend (Chapter 5 figures and the selection flowchart),
-  // lightened where the original would vanish on the dark background.
+  // Colour of each backend in the figures of Chapter 5 and in the boxes of Figure 5.13.
   var COLOURS = {
-    "Qiskit Aer": "#E0502A",
-    "Qiskit Aer Stabilizer": "#E0502A",
-    "Qiskit Aer, one rank per node": "#F29A80",
+    "Qiskit Aer": "#CC3311",
+    "Qiskit Aer Stabilizer": "#CC3311",
+    "Qiskit Aer, one rank per node": "#E08A75",
     "Qulacs": "#EE7733",
     "mpiQulacs": "#EE7733",
-    "CUDA-Q": "#C64B93",
-    "CUDA-Q Stim": "#C64B93",
-    "Qibo": "#7B70E6",
-    "Qibo NumPy": "#7B70E6",
-    "Qibo Clifford": "#7B70E6",
-    "qibojit": "#C3CCDC",
-    "QuEST": "#3FB8A6",
-    "Trajectory sampling": "#5F6C86",
-    "No feasible state vector": "#5F6C86",
-    "Beyond the GPUs used": "#5F6C86"
+    "CUDA-Q": "#AA3377",
+    "CUDA-Q Stim": "#AA3377",
+    "Qibo": "#332288",
+    "Qibo NumPy": "#332288",
+    "Qibo Clifford": "#332288",
+    "qibojit": "#000000",
+    "QuEST": "#009988",
+    "Trajectory sampling": "#595959",
+    "No feasible state vector": "#595959",
+    "Beyond the GPUs used": "#595959"
   };
+  // Fill of the outcome boxes of Figure 5.13, by outline colour.
+  var TINTS = {
+    "#CC3311": "#F6DCD7", "#EE7733": "#FCE8DC", "#AA3377": "#F1DCE8", "#332288": "#DCD9EB",
+    "#009988": "#D4EEEB", "#000000": "#EBEBEB", "#595959": "#F2F2F2"
+  };
+  function colourOf(name) { return COLOURS[name] || "#595959"; }
+  function tintOf(name) { return TINTS[colourOf(name)] || "#F2F2F2"; }
 
   // Source repositories, linked from every backend name in the readout.
   var REPOS = {
@@ -63,12 +72,13 @@
   // a Deucalion x86 job has 242 GiB per node, so 64 nodes hold up to n = 39).
   var LIMITS = { cpuNode: 33, cpuMeasured: 34, cpuCluster: 39, gpu8: 35, gpu16: 36, dm: 16 };
 
+  // level: the level of the framework the question belongs to (Figure 5.13).
   var QUESTIONS = {
     noise: {
-      gate: "ε",
+      level: 1,
       short: "Noise",
       prompt: "Does the simulation need to model noise exactly?",
-      help: "Exact noise replaces the state vector with a density matrix, whose memory grows fourfold with each added qubit.",
+      help: "Exact noisy evolution replaces the state vector with a density matrix of 4ⁿ elements, which roughly halves the number of qubits that fit in the same memory (Section 5.8).",
       options: function () {
         return [
           { v: "no", t: "No, an ideal circuit", d: "Unitary evolution of a pure state" },
@@ -77,17 +87,17 @@
       }
     },
     structure: {
-      gate: "U",
+      level: 1,
       short: "Circuits",
       multi: "circuits",
       prompt: "Which circuits will you simulate?",
-      help: "Pick one or several, or read your own from an OpenQASM file. Each maps to a structure class, and the structure decides whether a method cheaper than the dense state vector applies. Circuits that were not benchmarked are mapped by their structure and marked as inconclusive."
+      help: "Pick one or several, or read your own from an OpenQASM file. Each circuit belongs to one of the structure classes of Table 5.9, and the class decides whether a method cheaper than the dense state vector applies. Circuits that were not benchmarked are placed by their structure and marked as inconclusive."
     },
     output: {
-      gate: "M",
+      level: 1,
       short: "Output",
       prompt: "What must the run return?",
-      help: "Weak simulation draws measurement samples; strong simulation returns the state itself.",
+      help: "Tasks that need only measurement samples use weak simulation, whereas tasks that need exact amplitudes or probabilities call for strong simulation (Section 2.2.5).",
       options: function (a) {
         var list = [
           { v: "samples", t: "Measurement samples", d: "Counts or bitstrings (weak simulation)" },
@@ -100,7 +110,7 @@
       }
     },
     n: {
-      gate: "n",
+      level: 1,
       short: "Qubits",
       prompt: "How many qubits?",
       help: function (a) {
@@ -110,11 +120,11 @@
       }
     },
     hw: {
-      gate: "HW",
+      level: 2,
       short: "Hardware",
       multi: "toggle",
       prompt: "Which hardware can you use?",
-      help: "Pick one or both. The second level of the framework picks the backend for each execution regime that holds the state.",
+      help: "Pick one or both. Whether the run executes on GPUs is the first question of the second level and is left to the user, since at small sizes one CPU thread can finish before one GPU (Section 5.8).",
       options: function () {
         return [
           { v: "cpu", t: "CPUs", d: "x86 nodes with two AMD EPYC 7742 (128 cores), up to 64 nodes" },
@@ -123,36 +133,24 @@
       }
     },
     cpuScale: {
-      gate: "∥",
+      level: 2,
       short: "CPU scale",
       prompt: "How much of the CPU cluster will you use?",
-      help: "Thread scaling was measured on one node and strong scaling on the 30-qubit QFT up to 64 nodes.",
+      help: "Up to 33 qubits one node holds the state, so further nodes are optional. Thread scaling was measured on one node, and strong scaling on the 30-qubit QFT up to 64 nodes (Sections 5.2 and 5.3).",
       options: function () {
         return [
           { v: "thread", t: "One thread", d: "A serial run" },
           { v: "node", t: "One full node", d: "128 threads, one per core" },
           { v: "few", t: "2 to 16 nodes", d: "MPI across a few nodes" },
-          { v: "many", t: "32 to 64 nodes", d: "MPI across many nodes" }
-        ];
-      }
-    },
-    host: {
-      gate: "⇣",
-      short: "Host copy",
-      prompt: "Must the full state come back to host memory?",
-      help: "Copying the state off the GPU changes which backend is fastest on one GPU.",
-      options: function () {
-        return [
-          { v: "yes", t: "Yes, copy it to the host", d: "For example, to compute fidelity against a reference" },
-          { v: "no", t: "No, it can stay on the GPU", d: "A single probability or expectation value suffices" }
+          { v: "many", t: "32 or 64 nodes", d: "MPI across many nodes" }
         ];
       }
     },
     gpuCount: {
-      gate: "G",
+      level: 2,
       short: "GPUs",
       prompt: "How many A100-80 GPUs will hold the state?",
-      help: "At 35 qubits the 512 GiB state no longer fits one node of four GPUs, so the exchanges cross InfiniBand.",
+      help: "At 35 qubits the 512 GiB state no longer fits one node of four GPUs, so the exchanges cross InfiniBand (Section 5.4.2).",
       options: function () {
         return [
           { v: "eight", t: "Eight GPUs", d: "Two nodes, 640 GB in total" },
@@ -162,12 +160,12 @@
     }
   };
 
-  // The four structure classes of the first level (Table 5.9).
+  // The four circuit structures of the first level, named as in Table 5.9.
   var CLASSES = {
-    clifford: { name: "Clifford gates only", d: "H, S, CNOT and Paulis; polynomial-time stabiliser simulation applies" },
-    lowent: { name: "Low, bounded entanglement", d: "Schmidt rank stays small across every cut, so tensor networks reach far" },
-    deep: { name: "Entanglement that grows with depth", d: "Local gates whose entanglement builds up layer by layer" },
-    dense: { name: "Densely connected, non-Clifford", d: "Every pair of qubits interacts; the dense state vector reached furthest" }
+    clifford: { name: "Clifford-only", d: "H, S, CNOT and Paulis, so stabiliser simulation applies" },
+    lowent: { name: "Low-bond-dimension circuits", d: "Such as GHZ and a shallow HEA: the Schmidt rank stays small across every cut, so a tensor network reaches far" },
+    deep: { name: "Growing local entanglement", d: "Such as a deeper HEA: local gates whose entanglement builds up layer by layer" },
+    dense: { name: "Densely connected non-Clifford", d: "Such as the QFT: every pair of qubits interacts, and the dense state vector reached furthest" }
   };
   var CLASS_ORDER = ["clifford", "lowent", "deep", "dense"];
   // Choices for a circuit the researcher describes, including "not sure".
@@ -216,7 +214,7 @@
     { label: "64 x86 nodes", n: 39, measured: 34 }
   ];
   var DM_PLATFORMS = [
-    { label: "i9-13900KS workstation", n: 16, measured: 13 },
+    { label: "i9-13900KS platform", n: 16, measured: 13 },
     { label: "One x86 job, 242 GiB", n: 16, measured: null }
   ];
 
@@ -330,11 +328,6 @@
     if (hasGpu && a.n === LIMITS.gpu8) {
       qs.push("gpuCount");
       if (!answered(a, "gpuCount")) return { qs: qs, done: false };
-    }
-    var needsState = svGroups.some(function (g) { return effOutput(a, g.cls) === "state"; });
-    if (hasGpu && a.n >= 24 && a.n <= 31 && needsState) {
-      qs.push("host");
-      if (!answered(a, "host")) return { qs: qs, done: false };
     }
     return { qs: qs, done: true };
   }
@@ -557,8 +550,8 @@
         r = {
           b: "Qiskit Aer",
           regime: "Dense state vector · one x86 node · 128 threads",
-          ev: "With 128 threads, Qiskit Aer leads the " + CIRCUIT_NAME[c] + " from " + N + " = " + cross + ". At " + N + " = 30 it runs " + gain + " times faster than on one thread, while the backends that apply one gate per pass stop gaining at 16 to 64 threads, consistent with the memory-bandwidth limit (Sections 5.1 and 5.2).",
-          alt: "<b>Qulacs</b>, second on every circuit at " + N + " = 30"
+          ev: "With 128 threads, Qiskit Aer leads the " + CIRCUIT_NAME[c] + " from " + N + " = " + cross + ". At " + N + " = 30 it runs " + gain + " times faster than on one thread, because fusion reduces the passes over the state, while on the 30-qubit QFT the backends that apply one gate per pass stop gaining at 16 and 64 threads, consistent with a memory-bandwidth limit (Sections 5.1 and 5.2).",
+          alt: c === "clifford" ? "<b>QuEST</b>, second on this circuit at " + N + " = 28" : "<b>Qulacs</b>, second on this circuit at the largest sizes"
         };
       } else if (c === "clifford") {
         r = {
@@ -600,10 +593,13 @@
     }
     return {
       b: "mpiQulacs",
-      regime: "Dense state vector · 32 to 64 x86 nodes · one MPI rank per node",
-      ev: "Beyond 16 nodes, mpiQulacs is the fastest backend measured, 53 times faster on 64 nodes than on one at " + N + " = 30, with a last step better than ideal once each node’s 256 MiB share fits the L3 cache (Section 5.3).",
+      regime: "Dense state vector · 32 or 64 x86 nodes · one MPI rank per node",
+      ev: "On 32 and 64 nodes mpiQulacs is the fastest backend measured, running 53 times faster on 64 nodes than on one at " + N + " = 30. Its last step shortens the run by more than the ideal factor of two, at the node count where each node’s 256 MiB share of the state first falls below the 512 MiB of L3 cache (Section 5.3).",
       alt: "<b>Qiskit Aer</b> on 16 nodes, which was already faster (1.08 s against 1.20 s)",
-      caveats: ["Measured on the QFT at " + N + " = 30 and with 4 GiB of state per node."],
+      caveats: [
+        "Measured on the QFT at " + N + " = 30 and with 4 GiB of state per node.",
+        "The 128-ranks-per-node layout of Qiskit Aer was measured up to 16 nodes, so beyond that count the comparison covers mpiQulacs, QuEST and Qiskit Aer with one rank per node (Section 6.2)."
+      ],
       src: ["Table 5.3", "Figures 5.3 and 5.4", "Section 5.3"],
       evk: { type: "strong", nodes: 64 }
     };
@@ -613,13 +609,14 @@
     var n = a.n, r;
     var sweepSrc = ["Figure 5.1" + PANEL.gpu[c], "Section 5.1"];
     if (n > LIMITS.gpu16) return gpuBeyond(a);
+    // n ≤ 23, one GPU
     if (n <= 23) {
       r = {
         b: "Qulacs",
         regime: "Dense state vector · one A100 GPU",
-        ev: "On one A100, Qulacs leads every circuit through " + N + " = 23, six to twenty-eight times ahead of Qiskit Aer, CUDA-Q and qibojit up to " + N + " = 20, because each gate passes straight to a native CUDA kernel at a fixed cost of 13 to 20 µs (Section 5.1).",
+        ev: "On one A100, Qulacs leads every circuit up to " + N + " = 23 and runs at least six times faster than Qiskit Aer, CUDA-Q and qibojit up to " + N + " = 20, because each gate passes straight to a native CUDA kernel at a fixed cost of 13 to 20 µs per gate (Section 5.1).",
         alt: n <= 16 ? "<b>QuEST</b>, the second fastest up to " + N + " = 16" : null,
-        caveats: ["Its timed call excludes any copy of the state to host memory."]
+        caveats: ["Its timed call covers the gates and the allocation of the state, without any copy to host memory."]
       };
       r = reconcile(r, "gpu", c, n);
       r.regime = "Dense state vector · one A100-40";
@@ -628,28 +625,29 @@
       return r;
     }
     var mgpuSrc = ["Figures 5.6 and 5.7", "Table 5.7", "Section 5.4.2"];
+    // n ≥ 35, across nodes
     if (n >= LIMITS.gpu8) {
       var sixteen = n === LIMITS.gpu16 || a.gpuCount === "sixteen";
       if (sixteen) {
         r = {
           b: "Qiskit Aer",
           regime: "Dense state vector · 16 A100-80 over four nodes",
-          ev: "On sixteen GPUs, Qiskit Aer recovers more of the loss from crossing nodes and runs 1.1 to 1.3 times faster than CUDA-Q (Section 5.4.2).",
+          ev: "On sixteen GPUs, Qiskit Aer benefits more from the extra GPUs and overtakes CUDA-Q, running 1.1 to 1.3 times faster (Section 5.4.2).",
           alt: n === LIMITS.gpu8 ? "<b>CUDA-Q</b>, ahead on eight GPUs" : null
         };
       } else {
         r = {
           b: "CUDA-Q",
           regime: "Dense state vector · 8 A100-80 over two nodes",
-          ev: "At " + N + " = 35 a second node is unavoidable. On eight GPUs CUDA-Q stays about 1.3 times ahead of Qiskit Aer, as both spend most of the run waiting for exchanges over InfiniBand (Section 5.4.2).",
+          ev: "At " + N + " = 35 the 512 GiB state needs a second node, so the exchanges cross InfiniBand. On eight GPUs CUDA-Q stays about 1.3 times ahead of Qiskit Aer, although crossing the node boundary slows it about eight times against about two and a half for Qiskit Aer (Section 5.4.2).",
           alt: "<b>Qiskit Aer</b>, ahead on sixteen GPUs"
         };
       }
       r.caveats = [
-        "Under the default UCX settings of Deucalion, each GPU swapped about 0.9 GB/s across nodes; a tuned transport could change this order.",
+        "Under the default UCX settings of Deucalion, each GPU swapped data at about 0.9 GB/s across nodes, two orders of magnitude below NVLink. Transport tuning could reduce this cost and change the relative performance (Sections 5.4.2 and 6.2).",
         "Multi-GPU series measured on the QFT."
       ];
-      if (n === LIMITS.gpu8) r.caveats.push("QuEST holds at most 31 qubits of the state per GPU in distributed runs, so it needs sixteen GPUs at " + N + " = 35.");
+      if (n === LIMITS.gpu8) r.caveats.push("QuEST holds at most 31 qubits of the state per GPU in distributed runs, so it reaches " + N + " = 35 only on sixteen GPUs.");
       if (n === LIMITS.gpu16) {
         r.out = "The multi-GPU series ended at " + N + " = 35. Sixteen A100-80 hold the 1 TiB state at " + N + " = 36; eight do not.";
         r.caveats.push("QuEST would need 32 GPUs at " + N + " = 36, since it holds at most 31 qubits per GPU in distributed runs.");
@@ -658,78 +656,47 @@
       r.evk = { type: "mgpu", c: c, gpus: sixteen ? 16 : 8 };
       return r;
     }
-    var onNode = {
-      b: "CUDA-Q",
-      regime: "",
-      ev: "Within one node, CUDA-Q was faster than Qiskit Aer at every size the node holds, 3.5 to 4 times on four GPUs, because its cuStateVec kernels compute faster. Crossing to a second node slowed all three multi-GPU backends, so one node is the fastest configuration whenever it holds the state (Section 5.4).",
-      alt: "<b>Qiskit Aer</b>, which also exchanges over NVLink with the CUDA IPC transport",
-      caveats: ["Measured with the state left on the GPUs."],
-      src: mgpuSrc.concat(["Table 5.5"]),
-      evk: { type: "mgpu", c: c, gpus: 4 }
-    };
-    if (n >= 32) {
-      var min = n === 32 ? "one" : n === 33 ? "two" : "four";
-      onNode.regime = "Dense state vector · " + (n === 34 ? "four" : min + " to four") + " A100-80 GPUs of one node";
-      if (n < 34) onNode.caveats.push("More GPUs within the node still shorten the run, and four GPUs cut the " + N + " = 32 QFT time by more than half.");
-      if (n >= 33) onNode.caveats.push("QuEST holds at most 31 qubits per GPU in distributed runs, so at " + N + " = " + n + " it needs " + (n === 33 ? "all four GPUs of the node" : "eight GPUs, two nodes") + ".");
-      if (c === "clifford") onNode.caveats.push("Multi-GPU runs measured on the QFT and the HEA.");
-      return onNode;
+    // n = 31 to 34, the GPUs of one node
+    if (n >= 31) {
+      r = {
+        b: "CUDA-Q",
+        regime: "Dense state vector · " + (n === 34 ? "four" : n === 33 ? "two to four" : "one to four") + " A100-80 GPUs of one node",
+        ev: "With the state left on the GPUs, CUDA-Q was the fastest of the three multi-GPU backends within one node at every size measured, leading Qiskit Aer by 3.6 to 4.2 times on four GPUs from " + N + " = 32 to 34. Crossing to a second node slowed all three under the default UCX settings of Deucalion, so one node gave the fastest time at every size it holds (Sections 5.4.2 and 5.8).",
+        alt: "<b>Qiskit Aer</b>, second within the node, which exchanges directly between GPUs when the CUDA IPC transport of UCX is enabled",
+        caveats: ["Rests on runs that leave the state on the GPUs, which suffices when only samples or a single probability are needed (Section 5.8)."],
+        src: mgpuSrc.concat(["Table 5.5"]),
+        evk: { type: "mgpu", c: c, gpus: 4 }
+      };
+      if (n === 31) r.caveats.push("On one A100-40, whose largest state is " + N + " = 31, the single-GPU comparison of Figure 5.1 stops at " + N + " = 30, since at " + N + " = 31 only QuEST returned results on all three circuits, Qiskit Aer on the QFT and the HEA, and CUDA-Q on the QFT (Section 5.8).");
+      if (n < 34) r.caveats.push("More GPUs within the node still shorten the run, and four GPUs cut the " + N + " = 32 QFT time by more than half (Section 5.4.1).");
+      if (n >= 33) r.caveats.push("QuEST holds at most 31 qubits per GPU in distributed runs, so at " + N + " = " + n + " it needs " + (n === 33 ? "all four GPUs of the node" : "eight GPUs, two nodes") + ".");
+      r.caveats.push(c === "qft" ? "The comparison of the three multi-GPU backends was measured on the QFT." : "The comparison of the three multi-GPU backends was measured on the QFT; CUDA-Q alone also ran the HEA on one, two and four GPUs (Section 5.4.1).");
+      return r;
     }
-    if (a.output !== "state" || a.host === "no") {
-      onNode.regime = "Dense state vector · one to four A100 GPUs of one node";
-      onNode.ev = "With the state left on the device, CUDA-Q was about eight times faster than QuEST and four times faster than Qiskit Aer on one GPU at " + N + " = 30, and stayed ahead within the node (Section 5.4.2).";
-      onNode.caveats.push("Measured on the QFT.");
-      return onNode;
-    }
-    // State copied back to the host, one A100-40 (n = 24..31).
-    var hostCaveat = "The times of Qiskit Aer and CUDA-Q include copying the state to host memory, a cost that grows with the state; those of Qulacs, qibojit and QuEST do not.";
-    if (n === 31) {
-      if (c === "qft") {
-        r = {
-          b: "Qiskit Aer",
-          regime: "Dense state vector · one A100-40 · state copied to host",
-          ev: "At " + N + " = 31, the largest state an A100-40 holds, Qiskit Aer, CUDA-Q and QuEST returned results on the QFT, and Qiskit Aer led from " + N + " = 24 to 30 (Section 5.1).",
-          alt: "<b>CUDA-Q</b>, which also reached " + N + " = 31",
-          caveats: [hostCaveat]
-        };
-      } else if (c === "clifford") {
-        r = {
-          b: "QuEST",
-          regime: "Dense state vector · one A100-40",
-          ev: "At " + N + " = 31, the largest state an A100-40 holds, QuEST is the only backend measured on the Clifford circuit, at 23.7 s (Figure 5.1i and Table 5.10).",
-          alt: "<b>CUDA-Q</b>, the fastest on this circuit up to " + N + " = 30",
-          caveats: ["Its timed call covers the gates alone, without the copy to host memory that the timed calls of Qiskit Aer and CUDA-Q include."]
-        };
-      } else {
-        r = {
-          b: "Qiskit Aer",
-          regime: "Dense state vector · one A100-40 · state copied to host",
-          ev: "At " + N + " = 31, the largest state an A100-40 holds, Qiskit Aer and QuEST returned results on the " + CIRCUIT_NAME[c] + ", and Qiskit Aer was 1.7 times faster although its time includes the copy to host memory (Figure 5.1" + PANEL.gpu[c] + ").",
-          alt: "<b>QuEST</b>, which also reached " + N + " = 31",
-          caveats: [hostCaveat]
-        };
-      }
-    } else if (c === "qft") {
+    // n = 24 to 30, the one-GPU comparison
+    var hostCaveat = "Rests on runs that copy the state to host memory, as computing the fidelity against a reference requires. The times of Qiskit Aer and CUDA-Q include that copy; those of Qulacs, qibojit and QuEST do not (Sections 4.4.1 and 5.8).";
+    var deviceCaveat = "With the state left on the GPU, CUDA-Q was about four times faster than Qiskit Aer on one A100-80 on the QFT at " + N + " = 30 (Section 5.4.2).";
+    if (c === "qft") {
       r = {
         b: "Qiskit Aer",
         regime: "Dense state vector · one A100-40 · state copied to host",
-        ev: "With the state copied to the host, Qiskit Aer leads the QFT from " + N + " = 24 to 30, 1.1 to 1.7 times ahead of CUDA-Q and 4.4 times ahead of Qulacs at " + N + " = 30, consistent with its fusion of controlled rotations into diagonal operations (Section 5.1).",
-        alt: "<b>CUDA-Q</b>, if the state can stay on the GPU",
-        caveats: [hostCaveat]
+        ev: "Qiskit Aer leads the QFT on one A100-40 from " + N + " = 24 to 30, running 1.1 to 1.7 times faster than CUDA-Q and 4.4 times faster than Qulacs at " + N + " = 30, which is consistent with its fusion of controlled rotations into diagonal operations (Section 5.1).",
+        alt: "<b>CUDA-Q</b>, 1.1 to 1.7 times behind on this circuit",
+        caveats: [hostCaveat, deviceCaveat]
       };
     } else if (n === 24) {
       r = {
         b: "Qulacs",
         regime: "Dense state vector · one A100-40",
-        ev: "At " + N + " = 24 Qulacs still leads the " + CIRCUIT_NAME[c] + " on one A100-40, as the selection flowchart records (Figure 5.13), and CUDA-Q leads at the larger sizes. Each Qulacs gate passes straight to a native CUDA kernel, which gives it the lowest fixed costs (Section 5.1).",
-        alt: "<b>CUDA-Q</b>, the fastest on this circuit at the larger sizes",
-        caveats: ["The timed call of Qulacs excludes the host copy, whereas those of Qiskit Aer and CUDA-Q include it."]
+        ev: "At " + N + " = 24 Qulacs still leads the " + CIRCUIT_NAME[c] + " on one A100-40, as Figure 5.13 records, and CUDA-Q is the fastest from " + N + " = 25. Each Qulacs gate passes straight to a native CUDA kernel, which gives it the lowest fixed costs (Section 5.1).",
+        alt: "<b>CUDA-Q</b>, the fastest on this circuit from " + N + " = 25",
+        caveats: ["The timed call of Qulacs excludes the copy of the state to host memory, whereas those of Qiskit Aer and CUDA-Q include it (Section 4.4.1)."]
       };
     } else {
       r = {
         b: "CUDA-Q",
         regime: "Dense state vector · one A100-40 · state copied to host",
-        ev: "With the state copied to the host, CUDA-Q is the fastest on the HEA and the Clifford circuit at the larger sizes of one A100-40, about 3 times faster than Qulacs on the HEA and 1.3 times on the Clifford circuit at " + N + " = 30, because fusion saves more time than the copy costs (Section 5.1).",
+        ev: "On the HEA and the Clifford circuit, which contain no controlled rotations, CUDA-Q is the fastest on one A100-40 from " + N + " = 25. At " + N + " = 30 it is about 3 times faster than Qulacs on the HEA and 1.3 times on the Clifford circuit, so the time that fusion saves outweighs the cost of the copy to host memory (Section 5.1).",
         alt: c === "clifford" ? "<b>Qulacs</b> and <b>qibojit</b>, which also finish ahead of Qiskit Aer on this circuit" : "<b>Qulacs</b>, which leads up to " + N + " = 24",
         caveats: [hostCaveat]
       };
@@ -752,25 +719,25 @@
       if (n <= 6) {
         r = {
           b: "Qibo NumPy",
-          regime: "Density matrix · NumPy backend · i9-13900KS",
-          ev: "At these sizes fixed costs set the time. Qiskit Aer and Qulacs stay at a few hundredths of a second, while the NumPy backend of Qibo starts about twenty to fifty times faster at " + N + " = 3, a lead that shrinks as the matrix grows (Section 5.6).",
-          alt: "<b>Qiskit Aer</b>, the fastest measured from " + N + " = 7",
-          caveats: ["Every time at these sizes stays below a tenth of a second."].concat(channelCaveats)
+          regime: "Density matrix · NumPy backend · i9-13900KS platform",
+          ev: "Up to " + N + " = 7 fixed costs dominate. Qiskit Aer and Qulacs take a few hundredths of a second, almost independent of size, while Qibo with its NumPy backend starts twenty to fifty times faster, although its runtime grows with the matrix from " + N + " = 3 (Section 5.6).",
+          alt: "<b>Qiskit Aer</b>, the fastest of the three from approximately " + N + " = 8",
+          caveats: ["Every time at these sizes stays below a tenth of a second (Figure 5.9)."].concat(channelCaveats)
         };
       } else if (n <= LIMITS.dm) {
         r = {
           b: "Qiskit Aer",
-          regime: "Density matrix · i9-13900KS",
-          ev: "Qiskit Aer measured the shortest time of the three density-matrix backends from " + N + " = 7 and stays closest to the fourfold growth per qubit, so its lead widens to about twenty-five times at " + N + " = 13. From about " + N + " = 8 the density matrix, rather than fixed costs, sets the time (Section 5.6).",
+          regime: "Density matrix · i9-13900KS platform",
+          ev: "Qiskit Aer is the fastest of the three density-matrix backends from approximately " + N + " = 8, where updating the density matrix, rather than fixed costs, sets the time. It stays closest to the fourfold growth per qubit, which leaves it about twenty-five times faster at " + N + " = 13 (Section 5.6).",
           alt: n === 7 ? "<b>Qibo NumPy</b>, close behind at " + N + " = 7" : null,
           caveats: channelCaveats.slice()
         };
-        if (n >= 14) r.out = "The density-matrix sweep ended at " + N + " = 13, where one repetition of the two slower backends exceeded an hour; the matrix still fits one x86 job up to " + N + " = 16.";
+        if (n >= 14) r.out = "The density-matrix sweep stops at " + N + " = 13, although a single density matrix would fit in the memory of the platform up to " + N + " = 16 (Section 5.6).";
       } else {
         r = {
           b: "Trajectory sampling",
           regime: "Outside the density-matrix range of this dissertation",
-          ev: "An exact density matrix needs 16·4<sup>" + N + "</sup> bytes, so one Deucalion x86 job of 242 GiB holds at most " + N + " = 16. Trajectory sampling keeps the memory of a state vector at the cost of many repeated runs (Section 3.3), and its comparison with density matrices is proposed as future work (Section 6.3).",
+          ev: "A density matrix has 4<sup>" + N + "</sup> elements of 16 bytes, so the platform used in this dissertation holds at most " + N + " = 16. Trajectory sampling stores a state vector for each trajectory, at the cost of repeated runs (Section 3.3), and its comparison with density-matrix propagation is proposed as future work (Section 6.3).",
           caveats: channelCaveats.slice(1),
           out: "Beyond the reach of exact density-matrix simulation on one node."
         };
@@ -783,12 +750,12 @@
     if (isStab(m)) {
       r = m === "stab-aer" ? {
         b: "Qiskit Aer Stabilizer",
-        regime: "Stabiliser tableau · sampled output · one CPU thread",
+        regime: "Stabiliser tableau · 1024 samples · one x86 thread",
         ev: "Qiskit Aer Stabilizer and Qibo Clifford stayed below 0.1 s up to " + N + " = 60, where a state vector would need 16 EiB. CUDA-Q Stim exceeded 0.1 s from " + N + " = 51, because it pays the framework’s dispatch and compilation in every repetition (Section 5.7).",
         alt: "<b>Qibo Clifford</b>, if the tableau alone is enough"
       } : {
         b: "Qibo Clifford",
-        regime: "Stabiliser tableau · no sampling · CPU",
+        regime: "Stabiliser tableau · no sampling · host processor of an A100-40 node",
         ev: "Qibo Clifford builds the tableau without sampling and, like Qiskit Aer Stabilizer, stayed below 0.1 s up to " + N + " = 60, where a state vector would need 16 EiB (Section 5.7).",
         alt: "<b>Qiskit Aer Stabilizer</b>, for sampled output"
       };
@@ -803,15 +770,15 @@
       r = {
         b: "CUDA-Q",
         regime: "Tensor network · cuTensorNet · one A100-40 · 1024 samples",
-        ev: "With CUDA-Q, GHZ and the one-layer HEA completed every size up to " + N + " = 500, where one contraction takes about an hour; every larger size exceeded the time limit. Their Schmidt rank across any cut of the qubit chain is at most two, so the contraction stays small (Section 5.7).",
-        alt: n <= 28 ? "<b>Qibo</b> (cuTensorNet), faster at the sizes both reached, up to " + N + " = 28" : null,
+        ev: "With CUDA-Q, GHZ and the one-layer HEA completed runs at every tested size up to " + N + " = 500, where the runtime reaches about an hour; every repetition at larger sizes exceeded the time limit. GHZ has Schmidt rank two across any cut, and a single HEA ring keeps the rank at most four across each cut of the qubit chain, independently of " + N + " (Section 5.7).",
+        alt: n <= 28 ? "<b>Qibo</b> through cuTensorNet, faster at all shared sizes but returning the full state, with its last completed runs at " + N + " = 28" : null,
         caveats: [
-          "Samples only, since a contraction that returns the full state ran out of GPU memory at " + N + " = 30.",
-          "Measured on GHZ and a one-layer HEA; the path search runs inside each timed call."
+          "For sampled output only: the contraction into the full state hit the GPU memory limit at " + N + " = 30, before the state vector does (Section 5.8).",
+          "Measured on GHZ and a one-layer HEA; each timed call draws 1024 shots and includes a new search for a contraction path."
         ]
       };
       if (n <= 31) r.caveats.push("Up to " + N + " = 31 one A100-40 also holds the dense state vector (Section 5.1).");
-      if (n > 500) r.out = "Sizes from " + N + " = 600 exceeded the time limit.";
+      if (n > 500) r.out = "Every repetition from " + N + " = 600 on exceeded the time limit of one hour.";
       r.kind = "sv-ref";
       r.src = ["Figure 5.12", "Section 5.7"];
       r.evk = { type: "tn", cls: "lowent" };
@@ -821,10 +788,13 @@
       r = {
         b: "CUDA-Q",
         regime: "Tensor network · cuTensorNet · one A100-40 · 1024 samples",
-        ev: "With twenty HEA layers, the CUDA-Q contraction completed up to " + N + " = 36 within the time limit, beyond the " + N + " = 34 that one GPU node holds as a state vector (Section 5.7).",
-        caveats: ["Each added layer raises the rank the contraction must carry, so the reachable size falls with depth."]
+        ev: "With twenty HEA layers, " + N + " = 36 is the largest size at which a CUDA-Q contraction completed, beyond the " + N + " = 34 that one GPU node holds as a state vector, so the tensor network remains an option for deeper circuits (Sections 5.7 and 5.8).",
+        caveats: [
+          "Additional entangling layers can increase the bond dimensions needed to represent the state exactly, so the reach falls with depth.",
+          "At " + N + " = 30 and 36 some repetitions exceeded the time limit while another completed (Figure 5.12)."
+        ]
       };
-      if (n > 36) r.out = "With twenty layers, the time limit was reached after " + N + " = 36.";
+      if (n > 36) r.out = "With twenty layers, " + N + " = 36 is the largest size with a completed repetition.";
       r.kind = "sv-ref";
       r.src = ["Figure 5.12", "Section 5.7"];
       r.evk = { type: "tn", cls: "deep" };
@@ -838,10 +808,102 @@
     return r;
   }
 
+  /* ---------- path through Figure 5.13 ---------- */
+  // The path of one query through the figure: the decisions taken (d: decision, a: "yes" or
+  // "no", note: why, where the answer is not obvious), then either the box reached (end), the
+  // stacked pair still to be divided (pair), or the decision that still waits for an answer
+  // (open). sv is true once the path enters the second level. Ids are those of js/flow.js.
+  // q holds noise, structure (a class), output, n and, for the second level, hw ("cpu" or
+  // "gpu"), cpuScale and gpuCount; answers that are missing leave the path open.
+  function figPath(q) {
+    var p = { steps: [], end: null, pair: null, open: null, sv: false, none: null };
+    function step(d, ans, note) { p.steps.push({ d: d, a: ans, note: note || null }); }
+    function stop(box) { p.end = box; return p; }
+    function wait(d) { p.open = d; return p; }
+    if (q.noise == null) return wait("noise");
+    if (q.noise === "yes") { step("noise", "yes"); return stop("dm"); }
+    step("noise", "no");
+    var s = q.structure, o = q.output, n = q.n;
+    if (!s) return wait("clifford");
+    if (s === "clifford" && o !== "state") {
+      step("clifford", "yes");
+      if (!o) { p.pair = ["stabAer", "stabQibo"]; return p; }
+      return stop(o === "samples" ? "stabAer" : "stabQibo");
+    }
+    step("clifford", "no", s === "clifford" ? "The gates are Clifford, but the task needs amplitudes, which the stabiliser backends do not return" : null);
+    if (s === "lowent" && !q.noTN) {
+      step("tn", "yes");
+      if (!o) return wait("samples");
+      if (o === "samples") { step("samples", "yes"); return stop("tnBox"); }
+      step("samples", "no");
+    } else if (s === "deep" && !q.noTN && o !== "state") {
+      // With growing entanglement the tensor network is used only beyond what one GPU node holds.
+      if (n == null || !o) return wait("tn");
+      if (n >= 35) { step("tn", "yes", "Beyond " + N + " = 34 the state exceeds one GPU node, and the tensor network remains an option for deeper circuits"); step("samples", "yes"); return stop("tnBox"); }
+      step("tn", "no", "Added layers reduce the reach of the tensor network, and the state vector holds this size");
+    } else {
+      step("tn", "no", q.noTN ? "The tensor-network runs used A100 GPUs, and only CPUs were chosen"
+        : s === "deep" ? "The task needs the full state, and the contraction into the full state hit the GPU memory limit at " + N + " = 30" : null);
+    }
+    p.sv = true;
+    if (n != null && n > LIMITS.cpuCluster) { p.none = "No platform of this dissertation holds the state"; return p; }
+    if (!q.hw) return wait("gpu");
+    if (q.hw === "cpu") {
+      step("gpu", "no");
+      if (n == null) return wait("n33");
+      if (n > LIMITS.cpuNode) { step("n33", "no"); return stop("mpi34"); }
+      step("n33", "yes");
+      if (!q.cpuScale) return wait("nodes");
+      if (q.cpuScale === "thread" || q.cpuScale === "node") { step("nodes", "no"); return stop(q.cpuScale); }
+      step("nodes", "yes");
+      return stop(q.cpuScale === "few" ? "aerNodes" : "mpiNodes");
+    }
+    step("gpu", "yes");
+    if (n == null) return wait("n23");
+    if (n <= 23) { step("n23", "yes"); return stop("gpuQulacs"); }
+    step("n23", "no");
+    if (n > 34) {
+      step("n34", "no");
+      if (n > LIMITS.gpu16) { p.none = "More than the sixteen GPUs of this dissertation hold"; return p; }
+      if (n === LIMITS.gpu16) return stop("aer16");
+      if (!q.gpuCount) { p.pair = ["cq8", "aer16"]; return p; }
+      return stop(q.gpuCount === "sixteen" ? "aer16" : "cq8");
+    }
+    step("n34", "yes");
+    if (n > 30) { step("n30", "no"); return stop("cqNode"); }
+    step("n30", "yes");
+    return stop(circuitClass(q) === "qft" ? "aerGpu" : "cqGpu");
+  }
+
+  // Every path of the current answers, complete or not: one per structure class and, once
+  // the second level is reached, per hardware.
+  function figPaths(a) {
+    if (a.noise !== "no") return [{ cls: null, hw: null, path: figPath(a) }];
+    var groups = groupsOf(a);
+    if (!groups.length) return [{ cls: null, hw: null, path: figPath({ noise: "no" }) }];
+    var hw = hwList(a), hasGpu = hw.indexOf("gpu") !== -1, list = [];
+    groups.forEach(function (g) {
+      var base = groupBase(a, g);
+      delete base.hw;
+      var first = figPath(base);
+      // A tensor-network path with only CPUs chosen falls back to the state vector.
+      if (first.end === "tnBox" && hw.length && !hasGpu) { base.noTN = true; first = figPath(base); }
+      if (!first.sv || !hw.length || first.none) { list.push({ cls: g.cls, hw: null, path: first }); return; }
+      ["gpu", "cpu"].forEach(function (h) {
+        if (hw.indexOf(h) === -1) return;
+        var b = {};
+        for (var k in base) b[k] = base[k];
+        b.hw = h;
+        list.push({ cls: g.cls, hw: h, path: figPath(b) });
+      });
+    });
+    return list;
+  }
+
   // One block per structure class, each with one outcome per usable hardware regime.
   function recommendAll(a) {
     if (a.noise === "yes") {
-      return { kind: "dm", blocks: [{ cls: null, circuits: [], unsure: [], conf: "measured", outcomes: [{ hw: null, rec: recommend(a) }] }] };
+      return { kind: "dm", blocks: [{ cls: null, circuits: [], unsure: [], conf: "measured", outcomes: [{ hw: null, rec: recommend(a), path: figPath(a) }] }] };
     }
     var hw = hwList(a);
     var hasGpu = hw.indexOf("gpu") !== -1;
@@ -850,17 +912,17 @@
       var m = method(base);
       var outcomes = [];
       if (isStab(m)) {
-        outcomes.push({ hw: null, rec: recommend(base) });
+        outcomes.push({ hw: null, rec: recommend(base), path: figPath(base) });
       } else if (isTN(m) && hasGpu) {
         base.hw = "gpu";
-        outcomes.push({ hw: null, rec: recommend(base) });
+        outcomes.push({ hw: null, rec: recommend(base), path: figPath(base) });
       } else {
         var noTN = isTN(m);
         if (noTN) base.noTN = true;
         if (a.n > LIMITS.cpuCluster) {
           var inf = infeasible(base);
           inf.kind = "sv";
-          outcomes.push({ hw: null, rec: inf });
+          outcomes.push({ hw: null, rec: inf, path: figPath(base) });
         } else {
           ["gpu", "cpu"].forEach(function (h) {
             if (hw.indexOf(h) === -1) return;
@@ -869,7 +931,7 @@
             b.hw = h;
             var rec = recommend(b);
             if (noTN) rec.caveats.unshift("A tensor network would apply to this class, but those results were measured on A100 GPUs; on CPUs the state vector is the measured option.");
-            outcomes.push({ hw: h, rec: rec });
+            outcomes.push({ hw: h, rec: rec, path: figPath(b) });
           });
         }
       }
@@ -884,6 +946,10 @@
   window.Selector = {
     QUESTIONS: QUESTIONS,
     COLOURS: COLOURS,
+    colourOf: colourOf,
+    tintOf: tintOf,
+    figPath: figPath,
+    figPaths: figPaths,
     REPOS: REPOS,
     CLASSES: CLASSES,
     CLASS_ORDER: CLASS_ORDER,
