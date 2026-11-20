@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Quantum Simulator Selector</title>
-<meta name="description" content="Prototype of the two-level selection framework of the dissertation (Section 5.8): it asks about the circuits, the output and the hardware, or reads an OpenQASM file, follows Figure 5.13 and returns the fastest configuration measured in Chapter 5, with the measurements behind it.">
-<link rel="stylesheet" href="css/style.css?v=6">
+<meta name="description" content="Prototype of the two-level selection framework of the dissertation (Section 5.8): it asks about the circuits, the output and the hardware, or takes the answers from Figure 5.13 itself, and returns the fastest configuration measured in Chapter 5, with the measurements behind it.">
+<link rel="stylesheet" href="css/style.css?v=7">
 </head>
 <body>
 <div class="page">
@@ -13,11 +13,11 @@
   <header class="masthead">
     <h1>Quantum Simulator Selector</h1>
     <p class="byline">Madalena Barros, Instituto Superior Técnico, Universidade de Lisboa</p>
-    <p class="standfirst">A prototype of the two-level selection framework of Section 5.8 of the dissertation. Answer the questions, or read your circuit from an OpenQASM file, and the page follows Figure 5.13: first the simulation method, then the state-vector backend. It returns the configuration that was fastest in the measurements of Chapter 5, with those measurements, the conditions under which it holds and a run configuration to start from.</p>
+    <p class="standfirst">A prototype of the two-level selection framework of Section 5.8 of the dissertation. Answer the questions, or choose a branch or a box in Figure 5.13, and the page follows the figure: first the simulation method, then the state-vector backend. It returns the configuration that was fastest in the measurements of Chapter 5, with those measurements, the conditions under which it holds and how the dissertation ran it.</p>
   </header>
 
-  <main class="layout">
-    <div class="col-text" id="colText">
+  <div class="layout">
+    <main class="col-text" id="colText">
 
       <!-- 1. Questions -->
       <section class="ask" id="askView" aria-labelledby="qHeading">
@@ -61,44 +61,47 @@
         </section>
       </section>
 
-    </div>
+    </main>
 
-    <!-- Figure 5.13, drawn by js/flow.js -->
+    <!-- Figure 5.13, drawn by js/flow.js; its branches and boxes also set the answers -->
     <aside class="col-fig" id="colFig" aria-label="Selection flowchart">
       <figure class="flowfig">
+        <p class="fig-hint" id="figHint">Select a <em>yes</em>, a <em>no</em> or a box in the figure to set the answers.</p>
         <div class="flow-scroll" id="flowScroll" tabindex="0" role="group" aria-label="Figure 5.13, scrollable"></div>
         <p class="pan-hint" id="panHint" hidden>Scroll the figure sideways to see all of it.</p>
-        <figcaption class="caption" id="flowCaption"><b>Figure 5.13 of the dissertation.</b> Two-level selection of a simulation method and a state-vector backend, with the path of your answers drawn in blue. Each box names the backend that was fastest in that regime, in its colour in Chapter 5, and stacked boxes divide one answer by output, circuit or resources. The single-thread, full-node and single-GPU boxes rest on runs up to <i>n</i> = 30 and the density-matrix box on runs up to <i>n</i> = 13; the multi-node and multi-GPU boxes rest on the QFT alone, up to <i>n</i> = 34 on CPU nodes and <i>n</i> = 35 on GPU nodes. The layout is adapted from Kumaresan et al., as cited in the dissertation.</figcaption>
+        <p class="visually-hidden" id="flowStatus" role="status"></p>
+        <figcaption class="caption" id="flowCaption"><b>Figure 5.13 of the dissertation.</b> Two-level selection of a simulation method and a state-vector backend, with the path of your answers drawn in blue. Each box names the backend that was fastest in that regime, in its colour in Chapter 5, and stacked boxes divide one answer by output, circuit or resources. A box selected here takes the circuit and the size it stands for whenever those of the current answers do not lead to it. The single-thread, full-node and single-GPU boxes rest on runs up to <i>n</i> = 30 and the density-matrix box on runs up to <i>n</i> = 13; the multi-node and multi-GPU boxes rest on the QFT alone, up to <i>n</i> = 34 on CPU nodes and <i>n</i> = 35 on GPU nodes. The layout is adapted from Kumaresan et al., as cited in the dissertation.</figcaption>
       </figure>
     </aside>
-  </main>
 
-  <!-- Tools, available with or without a query -->
-  <section class="tools" aria-labelledby="toolsHeading">
-    <h2 id="toolsHeading">Tools</h2>
-    <details class="tool" id="memTool">
-      <summary><span class="tool-t">Memory calculator</span> <span class="tool-d">How much memory a state needs on each device, and where it fits</span></summary>
-      <div id="memToolBody"></div>
-    </details>
-    <details class="tool" id="cmpTool">
-      <summary><span class="tool-t">Compare two configurations</span> <span class="tool-d">Measured times of one circuit in two execution regimes, side by side</span></summary>
-      <div id="cmpToolBody"></div>
-    </details>
-  </section>
+    <!-- Tools, available with or without a query -->
+    <section class="tools" aria-labelledby="toolsHeading">
+      <h2 id="toolsHeading">Tools</h2>
+      <details class="tool" id="memTool">
+        <summary><span class="tool-t">Memory calculator</span> <span class="tool-d">How much memory a state needs on each device, and where it fits</span></summary>
+        <div id="memToolBody"></div>
+      </details>
+      <details class="tool" id="cmpTool">
+        <summary><span class="tool-t">Compare two configurations</span> <span class="tool-d">Measured times of one circuit in two execution regimes, side by side</span></summary>
+        <div id="cmpToolBody"></div>
+      </details>
+    </section>
 
-  <footer class="foot">
-    <p>This page is the prototype mentioned in Section 6.3 of the MSc dissertation <cite>Accelerating Quantum Circuit Simulation with NVIDIA GPUs and tools editing</cite>, Madalena Barros, Instituto Superior Técnico, Universidade de Lisboa, 2026. It encodes both levels of the selection framework and the results of Chapter 5 as rules. Sections, figures and tables cited here are those of the dissertation. Times are the values plotted in Chapter 5, measured on Deucalion and on the i9-13900KS platform in double precision; estimates and interpolations are marked wherever they appear.</p>
-    <p><a href="https://github.com/madalenarb/quantum-simulator-selector">Source code</a></p>
-  </footer>
+    <footer class="foot">
+      <p>This page is the prototype mentioned in Section 6.3 of the MSc dissertation <cite>Accelerating Quantum Circuit Simulation with NVIDIA GPUs and tools editing</cite>, Madalena Barros, Instituto Superior Técnico, Universidade de Lisboa, 2026. It encodes both levels of the selection framework and the results of Chapter 5 as rules. Sections, figures and tables cited here are those of the dissertation. Times are the values plotted in Chapter 5, measured on Deucalion and on the i9-13900KS platform in double precision; estimates and interpolations are marked wherever they appear.</p>
+      <p><a href="https://github.com/madalenarb/quantum-simulator-selector">Source code</a></p>
+    </footer>
+
+  </div>
 
 </div>
-<script src="js/data.js?v=6"></script>
-<script src="js/rules.js?v=6"></script>
-<script src="js/evidence.js?v=6"></script>
-<script src="js/qasm.js?v=6"></script>
-<script src="js/runconfig.js?v=6"></script>
-<script src="js/tools.js?v=6"></script>
-<script src="js/flow.js?v=6"></script>
-<script src="js/app.js?v=6"></script>
+<script src="js/data.js?v=7"></script>
+<script src="js/rules.js?v=7"></script>
+<script src="js/evidence.js?v=7"></script>
+<script src="js/qasm.js?v=7"></script>
+<script src="js/runconfig.js?v=7"></script>
+<script src="js/tools.js?v=7"></script>
+<script src="js/flow.js?v=7"></script>
+<script src="js/app.js?v=7"></script>
 </body>
 </html>

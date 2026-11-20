@@ -66,12 +66,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .byline { margin: 4px 0 0; font-size: 15px; color: var(--ink-2); }
 .standfirst { margin: 10px 0 0; max-width: 84ch; font-size: 16.5px; }
 
-.layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 34px; }
-.col-text, .col-fig { min-width: 0; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); }
+.col-text, .col-fig, .tools, .foot { min-width: 0; }
+.col-fig { margin-top: 34px; }
 @media (min-width: 1244px) {
-  .layout { grid-template-columns: minmax(400px, 1fr) 760px; gap: 36px; align-items: start; }
-  /* The shorter column stays in view while the taller one scrolls; js/app.js sets the offsets. */
-  .col-text, .col-fig { position: sticky; top: 16px; }
+  /* The questions and the result, the tools and the foot of the page run down the left. The
+     figure stays in view beside them for the whole length of the page and, where the window
+     is lower than the figure, scrolls on its own, so that it holds still while its branches
+     and boxes are chosen. */
+  .page { padding-bottom: 16px; }
+  .layout { grid-template-columns: minmax(400px, 1fr) 760px; grid-template-rows: auto auto 1fr; column-gap: 36px; }
+  .col-text { grid-column: 1; grid-row: 1; }
+  .tools { grid-column: 1; grid-row: 2; }
+  .foot { grid-column: 1; grid-row: 3; align-self: start; padding-bottom: 40px; }
+  .col-fig {
+    grid-column: 2; grid-row: 1 / 4; align-self: start; margin-top: 0;
+    position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; scrollbar-width: thin;
+  }
 }
 
 h2 { font-size: 21px; }
@@ -295,14 +306,23 @@ svg.chart { display: block; overflow: visible; }
 .caveats { padding-bottom: 12px; font-size: 14.5px; color: var(--ink); max-width: 72ch; }
 .caveats li, .ev-foot li, .tnotes li { margin: 0 0 4px; }
 
-/* run configuration */
+/* run configuration: how the dissertation ran it, and where each library documents it */
 .rc-note { font-size: 14.5px; color: var(--ink-2); max-width: 70ch; }
-.rc-bar { display: flex; align-items: center; gap: 12px; margin: 0 0 8px; }
-pre.code {
-  margin: 0; padding: 12px 14px; overflow-x: auto; tab-size: 4;
-  background: var(--panel); border: 1px solid var(--rule); border-radius: 4px;
-  font-family: var(--mono); font-size: 13px; line-height: 1.5;
+.rc {
+  display: grid; grid-template-columns: 6.6em minmax(0, 1fr); margin: 0 0 14px; max-width: 76ch;
+  border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; font-size: 14.5px;
 }
+.rc dt { padding: 6px 12px 6px 0; font-weight: 700; }
+.rc dd { margin: 0; padding: 6px 0; }
+.rc dt:not(:first-of-type), .rc dt:not(:first-of-type) + dd { border-top: 1px solid var(--rule); }
+.rc code { font-family: var(--mono); font-size: 0.92em; }
+.rc-tip { display: block; }
+.rc-tip + .rc-tip { margin-top: 7px; }
+.rc-docs-h { margin: 0 0 4px; font-size: 14.5px; font-weight: 700; }
+.rc-docs { margin: 0 0 8px; padding-left: 18px; font-size: 14.5px; max-width: 76ch; }
+.rc-docs li { margin: 0 0 4px; }
+.rc-docs .d { color: var(--ink-2); }
+.rc-foot { margin: 0; font-size: 13.5px; color: var(--ink-2); max-width: 76ch; }
 
 /* the path as a list */
 .pathlist { list-style: none; margin: 2px 0 12px; padding: 0; font-size: 14.5px; }
@@ -366,19 +386,34 @@ svg.flow { display: block; width: 100%; min-width: 660px; max-width: 760px; heig
 .flow .box rect { fill: var(--t); stroke: var(--c); stroke-width: 1.6; }
 .flow .bt { fill: #000; font-size: 11px; }
 .flow .bt .bname { font-size: 12.5px; font-weight: 700; font-variant-caps: small-caps; }
-.flow .edge path { fill: none; stroke: var(--ink-2); stroke-width: 1.2; }
+.flow .edge .ln { fill: none; stroke: var(--ink-2); stroke-width: 1.2; }
 .flow .edge polygon { fill: var(--ink-2); }
 .flow .edge text { fill: var(--ink-3); font-size: 11.5px; font-style: italic; }
 .flow .node, .flow .edge { transition: opacity 0.18s ease; }
 /* with a path drawn, the rest of the figure steps back */
 .flow.has-path .node:not(.on), .flow.has-path .edge:not(.on) { opacity: 0.3; }
-.flow .edge.on path { stroke: var(--blue); stroke-width: 2.6; }
+.flow .edge.on .ln { stroke: var(--blue); stroke-width: 2.6; }
 .flow .edge.on polygon { fill: var(--blue); stroke: var(--blue); stroke-width: 1.4; stroke-linejoin: round; }
 .flow .edge.on text { fill: var(--blue); font-weight: 700; }
 .flow .dec.on path { stroke-width: 2; }
 .flow .dec.open path { fill: var(--blue-tint-2); stroke-width: 2.8; }
 .flow .box.end rect { stroke-width: 3.4; }
 .flow .box.out rect { stroke-dasharray: 6 3; }
+/* the yes and no of each decision and the boxes are buttons that set the answers */
+.flow .panel, .flow .level, .flow .startbox, .flow .dec { pointer-events: none; }
+.flow .pick { cursor: pointer; outline: none; }
+.flow path.hit { fill: none; stroke: transparent; stroke-width: 22; pointer-events: stroke; }
+.flow rect.hit { fill: transparent; pointer-events: all; }
+.flow .edge.pick text { text-decoration: underline; text-decoration-thickness: 0.7px; text-underline-offset: 2px; }
+.flow.has-path .pick:not(.on) { opacity: 0.42; }
+.flow.has-path .pick:hover, .flow.has-path .pick:focus-visible { opacity: 1; }
+.flow .edge.pick:hover .ln, .flow .edge.pick:focus-visible .ln { stroke: var(--blue); stroke-width: 2.2; }
+.flow .edge.pick:hover polygon, .flow .edge.pick:focus-visible polygon { fill: var(--blue); }
+.flow .edge.pick:hover text, .flow .edge.pick:focus-visible text { fill: var(--blue); font-weight: 700; }
+.flow .edge.pick:focus-visible rect.hit { stroke: var(--blue); stroke-width: 1.6; }
+.flow .box.pick:hover rect { stroke-width: 2.8; }
+.flow .box.pick:focus-visible rect { stroke-width: 3.4; outline: 2px solid var(--blue); outline-offset: 2px; }
+.fig-hint { margin: 0 0 8px; font-size: 14.5px; color: var(--ink-2); }
 .flowfig .caption { margin-top: 10px; max-width: none; }
 .pan-hint { margin: 6px 0 0; font-size: 13.5px; color: var(--ink-2); font-style: italic; }
 @media (prefers-reduced-motion: reduce) { .flow .node, .flow .edge { transition: none; } }
@@ -426,11 +461,14 @@ svg.flow { display: block; width: 100%; min-width: 660px; max-width: 760px; heig
   .ctile .conf { grid-column: 2; white-space: normal; }
   .sel { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .sel dd { margin-bottom: 8px; }
+  .rc { grid-template-columns: minmax(0, 1fr); }
+  .rc dt { padding-bottom: 0; }
+  .rc dt + dd, .rc dt:not(:first-of-type) + dd { border-top: 0; padding-top: 1px; }
   .fits li { grid-template-columns: 1.3em minmax(0, 1fr); }
   .cap-n { grid-column: 2; }
 }
 
 @media print {
-  .results-actions, .sec-actions, .tools, .card-nav { display: none; }
-  .col-text, .col-fig { position: static; }
+  .results-actions, .sec-actions, .tools, .card-nav, .fig-hint { display: none; }
+  .col-fig { position: static; max-height: none; overflow: visible; }
 }

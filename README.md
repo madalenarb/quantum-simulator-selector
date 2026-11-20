@@ -3,10 +3,10 @@
 The prototype mentioned in Section 6.3 of the dissertation *Accelerating Quantum Circuit
 Simulation with NVIDIA GPUs and tools editing* (Madalena Barros, Instituto Superior Técnico,
 2026). It encodes both levels of the selection framework of Section 5.8 and the results of
-Chapter 5 as rules: it asks what the researcher needs, or reads the circuit from an OpenQASM
-file, follows Figure 5.13 (simulation method first, state-vector backend second) and returns
+Chapter 5 as rules: it asks what the researcher needs, or takes the answers from Figure 5.13
+itself, follows the figure (simulation method first, state-vector backend second) and returns
 the configuration that was fastest in the measurements, with those measurements, every other
-backend measured at that size, a run configuration to start from, and the limits of the
+backend measured at that size, how the dissertation ran it, and the limits of the
 measurements.
 
 Published at https://madalenarb.github.io/quantum-simulator-selector/
@@ -16,12 +16,20 @@ Published at https://madalenarb.github.io/quantum-simulator-selector/
 1. **Questions.** One question at a time, grouped as in Figure 5.13: the first level
    (noise, circuits, output, qubits) decides the simulation method, the second level
    (hardware and its scale) the state-vector backend. Circuits and hardware are
-   multi-select. An unlisted circuit can be read from an OpenQASM 2 or 3 file (or pasted),
-   named and classified by hand, or marked "Not sure". Answers can be changed at any time.
+   multi-select. The circuits listed are the ones that the dissertation ran: the QFT, the
+   HEA (one layer and several), GHZ and the ten-layer Clifford circuit. A circuit of the
+   researcher's own can be read from an OpenQASM 2 or 3 file (or pasted), named and
+   classified by hand, or marked "Not sure"; its result is then marked as a best guess.
+   Answers can be changed at any time.
 2. **Figure 5.13.** The flowchart of the dissertation is drawn beside the questions, in its
    own shapes and colours. The path of the answers is drawn into it as they are given, and
    the box that the query reaches is outlined. On narrow screens the same path is also given
-   as a list.
+   as a list. The figure also takes answers: every yes and no and every box is a button.
+   A branch sets what it decides (the circuits, the hardware, the size or the scale) and
+   leaves the other answers as they are; a box sets a complete query that ends in it,
+   keeping the current circuits and size where the box stands for them and otherwise
+   taking the circuit and size of the box. The result appears as soon as the query is
+   complete.
 3. **Result.** One configuration per circuit structure (and per hardware, if both were
    chosen). Each one gives
    - the method and the backend, as the two levels of the framework select them, and the
@@ -30,15 +38,20 @@ Published at https://madalenarb.github.io/quantum-simulator-selector/
    - **Measurements**: a plot of the series it rests on, with the size asked marked, and a
      table of every backend measured at that size, ranked by time, with its ratio to the
      fastest and one observation from Chapter 5;
-   - **Run configuration**: a script or C program set up the way the dissertation ran that
-     backend (versions of Table 4.3, layouts of Table 4.4, double precision), with an example
-     circuit of the structure class to replace with yours;
+   - **Run configuration**: how the dissertation ran that backend in that regime (version,
+     layout, settings, what the timer covers and the repetitions, from Tables 4.3 and 4.4 and
+     Sections 4.3 and 4.4), written for the circuits and the size of the query, with links
+     to the pages of the library's documentation that describe those settings, and with
+     tips where good practice goes beyond those runs (thread pinning and placement, gate
+     fusion in Qulacs, leaving the state on the GPU, tuning the transport between nodes).
+     The page gives no code, since the calls belong to each library and change between
+     versions;
    - the conditions under which it holds.
 
    Below them come the memory the state needs on every platform and what lies outside the
    measurements for this query.
 
-"See an example" runs a sample query (QFT, GHZ and Grover search, 30 qubits, CPUs and GPUs).
+"See an example" runs a sample query (QFT and GHZ, 30 qubits, CPUs and GPUs).
 **Copy link** copies a link that reopens the same result; the bare address always opens an
 empty set of questions, and "New query" clears the link from the address bar.
 
@@ -51,7 +64,8 @@ measured series.
 
 The rules in `js/rules.js` follow Tables 5.9 and 5.10 and the boxes of Figure 5.13. Every
 query has one path through the figure (`figPath()`), and the box at its end names the backend
-that the framework recommends for that regime. The text of Chapter 5 refines the boxes where
+that the framework recommends for that regime. `aim()` goes the other way, from a branch or a
+box of the figure to the answers. The text of Chapter 5 refines the boxes where
 it gives sizes: on one thread, for example, Qiskit Aer leads the QFT from n = 21 to 28 and
 QuEST the Clifford circuit from n = 13 to 28, although the box of the figure is Qulacs. When
 the result departs from the box in this way, the page says so.
@@ -116,16 +130,17 @@ browser.
   Chapter 5 (tokens at the top)
 - `js/data.js`: the measured times behind every plot and ranking, generated by
   `tools/make_data.py`; do not edit by hand
-- `js/rules.js`: the questions, the circuit catalogue (each circuit's structure and whether
-  it was measured, matched by gate set, or is inconclusive), the memory limits, every
-  decision rule with its section references, and the path of each query through Figure 5.13.
-  New backends or workloads are added here.
-- `js/flow.js`: Figure 5.13 as a drawing, the path of the answers in it, and the same path as
-  a list
+- `js/rules.js`: the questions, the catalogue of measured circuits with their structure
+  classes, the memory limits, every decision rule with its section references, the path of
+  each query through Figure 5.13, and the answers that follow from a choice made in the
+  figure. New backends or workloads are added here.
+- `js/flow.js`: Figure 5.13 as a drawing whose branches and boxes are buttons, the path of
+  the answers in it, and the same path as a list
 - `js/evidence.js`: the plots, the rankings with one observation per backend, and the
   interpolation and extrapolation rules
 - `js/qasm.js`: the OpenQASM reader and its structure analysis
-- `js/runconfig.js`: the run-configuration templates
+- `js/runconfig.js`: the run configurations (how the dissertation ran each backend in each
+  regime) and the addresses of the documentation pages
 - `js/tools.js`: the memory calculator, the comparison of two configurations, and the list of
   limits of the measurements
 - `js/app.js`: the interface (questions, validation, links, result, copy summary)
@@ -139,5 +154,5 @@ Recommendations reflect the measurements of the dissertation: Deucalion x86 node
 EPYC 7742), A100-40 and A100-80 nodes with four GPUs, and the i9-13900KS platform for the
 density-matrix runs, all in double precision. Results outside the measured range, and states
 that no platform of the study holds, are flagged as such. Other circuits, builds or machines
-may rank differently, and the run configurations are templates to adapt, not the benchmark
-harness itself.
+may rank differently. The run configurations describe the runs of the dissertation; the
+documentation of each library, which the page links to, is the reference for setting them up.

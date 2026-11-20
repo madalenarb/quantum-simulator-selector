@@ -6,7 +6,9 @@
  *
  * Flow.svg() returns the drawing as an SVG string, Flow.mark(svg, paths) draws the paths
  * of Selector.figPaths() into it, and Flow.pathList(path) gives the same path as a list
- * for narrow screens and screen readers.
+ * for narrow screens and screen readers. The yes and no of every decision and every box
+ * are buttons (class "pick", with data-edge or data-node), which js/app.js turns into
+ * answers through Selector.aim().
  */
 (function () {
   "use strict";
@@ -99,14 +101,23 @@
     // the line stops inside the head so that a thick stroke does not blunt the tip
     var sx = b[0] - ux * 5, sy = b[1] - uy * 5;
     var d = "M" + p.slice(0, -1).map(function (q) { return q[0] + " " + q[1]; }).join("L") + "L" + sx.toFixed(1) + " " + sy.toFixed(1);
-    return "<g class=\"edge\" data-edge=\"" + e.id + "\"><path d=\"" + d + "\"/><polygon points=\"" + head + "\"/>" +
-      (e.label ? "<text x=\"" + e.lx + "\" y=\"" + e.ly + "\" text-anchor=\"" + (e.anchor || "middle") + "\">" + e.label + "</text>" : "") + "</g>";
+    var line = "<path class=\"ln\" d=\"" + d + "\"/><polygon points=\"" + head + "\"/>";
+    if (!e.label) return "<g class=\"edge\" data-edge=\"" + e.id + "\">" + line + "</g>";
+    // A branch is a button: the arrow and its yes or no, with a wider area that takes the pointer.
+    var first = p[0], second = p[1];
+    var vx = first[0] - second[0], vy = first[1] - second[1], vl = Math.sqrt(vx * vx + vy * vy) || 1;
+    var hit = "M" + (first[0] + vx / vl * 8).toFixed(1) + " " + (first[1] + vy / vl * 8).toFixed(1) +
+      p.slice(1, -1).map(function (q) { return "L" + q[0] + " " + q[1]; }).join("") + "L" + (b[0] + ux * 4).toFixed(1) + " " + (b[1] + uy * 4).toFixed(1);
+    var question = plain(DECISIONS[e.id.split(":")[0]].text);
+    return "<g class=\"edge pick\" data-edge=\"" + e.id + "\" role=\"button\" tabindex=\"-1\" aria-label=\"" + esc(question + " " + e.label) + "\">" +
+      "<path class=\"hit\" d=\"" + hit + "\"/><rect class=\"hit\" x=\"" + (e.anchor === "start" ? e.lx - 4 : e.lx - 15) + "\" y=\"" + (e.ly - 13) + "\" width=\"30\" height=\"18\"/>" +
+      line + "<text x=\"" + e.lx + "\" y=\"" + e.ly + "\" text-anchor=\"" + (e.anchor || "middle") + "\">" + e.label + "</text></g>";
   }
+  function plain(h) { return String(h).replace(/<[^>]+>/g, ""); }
 
   function svg() {
     var o = [];
-    o.push("<svg class=\"flow\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " + W + " " + H + "\" width=\"" + W + "\" height=\"" + H + "\" role=\"img\" aria-labelledby=\"flowTitle\">");
-    o.push("<title id=\"flowTitle\">Figure 5.13 of the dissertation: two-level selection of a simulation method and a state-vector backend</title>");
+    o.push("<svg class=\"flow\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " + W + " " + H + "\" width=\"" + W + "\" height=\"" + H + "\" role=\"group\" aria-label=\"Figure 5.13 of the dissertation: two-level selection of a simulation method and a state-vector backend. Each yes, no and box sets the answers.\">");
     o.push("<rect class=\"panel\" x=\"3\" y=\"3\" width=\"754\" height=\"317\" rx=\"8\"/>");
     o.push("<rect class=\"panel\" x=\"3\" y=\"340\" width=\"754\" height=\"562\" rx=\"8\"/>");
     o.push("<text class=\"level\" x=\"12\" y=\"21\"><tspan class=\"lv\">First level</tspan><tspan x=\"12\" dy=\"15\">simulation method</tspan></text>");
@@ -131,7 +142,7 @@
     });
     Object.keys(BOXES).forEach(function (id) {
       var b = BOXES[id];
-      o.push("<g class=\"node box\" data-node=\"" + id + "\" style=\"--c:" + S.colourOf(b.b) + ";--t:" + S.tintOf(b.b) + "\"><rect x=\"" + b.x + "\" y=\"" + b.y + "\" width=\"" + b.w + "\" height=\"" + b.h + "\" rx=\"4\"/>" +
+      o.push("<g class=\"node box pick\" data-node=\"" + id + "\" role=\"button\" tabindex=\"-1\" aria-label=\"" + esc(b.b + ", " + plain(b.text)) + "\" style=\"--c:" + S.colourOf(b.b) + ";--t:" + S.tintOf(b.b) + "\"><rect x=\"" + b.x + "\" y=\"" + b.y + "\" width=\"" + b.w + "\" height=\"" + b.h + "\" rx=\"4\"/>" +
         lines(b.x + b.w / 2, b.y + b.h / 2, [esc(b.b)].concat(b.t), "bt", 14, "bname") + "</g>");
     });
     o.push("</svg>");
@@ -163,9 +174,12 @@
       g.classList.toggle("end", !!acc.end[id]);
       g.classList.toggle("open", !!acc.open[id]);
       g.classList.toggle("out", !!acc.out[id]);
+      if (g.classList.contains("pick")) g.setAttribute("aria-pressed", acc.end[id] ? "true" : "false");
     });
     Array.prototype.forEach.call(root.querySelectorAll(".edge"), function (g) {
-      g.classList.toggle("on", !!acc.edge[g.getAttribute("data-edge")]);
+      var on = !!acc.edge[g.getAttribute("data-edge")];
+      g.classList.toggle("on", on);
+      if (g.classList.contains("pick")) g.setAttribute("aria-pressed", on ? "true" : "false");
     });
   }
   // Centre of the element where the paths end or wait, in drawing units, to keep it in view.

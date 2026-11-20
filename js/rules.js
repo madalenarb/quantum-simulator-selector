@@ -91,7 +91,7 @@
       short: "Circuits",
       multi: "circuits",
       prompt: "Which circuits will you simulate?",
-      help: "Pick one or several, or read your own from an OpenQASM file. Each circuit belongs to one of the structure classes of Table 5.9, and the class decides whether a method cheaper than the dense state vector applies. Circuits that were not benchmarked are placed by their structure and marked as inconclusive."
+      help: "Pick one or several of the circuits benchmarked in the dissertation, or read your own from an OpenQASM file. Each circuit belongs to one of the structure classes of Table 5.9, and the class decides whether a method cheaper than the dense state vector applies. A circuit of your own is placed by its structure, so its result is a best guess."
     },
     output: {
       level: 1,
@@ -172,32 +172,24 @@
   var OTHER_CLASSES = CLASS_ORDER.concat(["unsure"]);
   var UNSURE = { name: "Not sure", d: "Treated as densely connected, which the dense state vector covers for any circuit" };
 
-  // How confidently a circuit maps to its class.
+  // How confidently a circuit maps to its class. Every circuit of the catalogue is measured;
+  // the other levels apply to a circuit that the researcher adds.
   var CONFIDENCE = {
     measured: { label: "Measured", d: "Benchmarked in this dissertation" },
-    gateset: { label: "By gate set", d: "Not benchmarked, but its gate set fixes the class" },
-    inconclusive: { label: "Inconclusive", d: "Not benchmarked; mapped by its structure, so the outcome is a best guess" },
     user: { label: "Your mapping", d: "Classified by you" },
     file: { label: "From your file", d: "Classified from the OpenQASM file you loaded; the Clifford test is exact, the entanglement class is a heuristic" },
     unsure: { label: "Structure unknown", d: "Treated as densely connected" }
   };
 
-  // Catalogue of circuits a researcher can pick. Add entries here as new workloads are measured.
+  // Catalogue of circuits a researcher can pick: the circuits that the dissertation ran
+  // (Section 4.2 and, for GHZ and the other depths of the HEA, Section 5.7). Add entries
+  // here as new workloads are measured.
   var CIRCUITS = [
-    { id: "clifford", name: "Random Clifford circuit", cls: "clifford", conf: "measured", note: "The ten-layer benchmark of Chapter 4" },
-    { id: "qec", name: "Error-correction syndrome extraction", cls: "clifford", conf: "gateset", note: "Clifford gates and Pauli measurements only" },
-    { id: "bv", name: "Bernstein–Vazirani", cls: "clifford", conf: "gateset", note: "H, CNOT and Z gates only" },
-    { id: "ghz", name: "GHZ state preparation", cls: "lowent", conf: "measured", note: "Tensor-network runs up to n = 500" },
-    { id: "hea1", name: "Hardware-efficient ansatz, one layer", cls: "lowent", conf: "measured", note: "Tensor-network runs up to n = 500" },
-    { id: "hea", name: "Hardware-efficient ansatz, several layers", cls: "deep", conf: "measured", note: "Eight CNOT rings as a state vector; twenty layers as a tensor network" },
-    { id: "trotter", name: "Trotterised Hamiltonian simulation", cls: "deep", conf: "inconclusive", note: "Nearest-neighbour gates whose entanglement grows with simulated time" },
-    { id: "qaoa", name: "QAOA", cls: "deep", conf: "inconclusive", note: "Entanglement depends on the problem graph and the number of layers" },
-    { id: "qft", name: "Quantum Fourier transform", cls: "dense", conf: "measured", note: "The benchmark circuit of Chapter 4" },
-    { id: "qpe", name: "Quantum phase estimation", cls: "dense", conf: "inconclusive", note: "Ends in an inverse QFT, but its controlled unitaries were not benchmarked" },
-    { id: "shor", name: "Shor’s algorithm, modular arithmetic", cls: "dense", conf: "inconclusive", note: "Arithmetic subroutines are proposed as future work" },
-    { id: "grover", name: "Grover search", cls: "dense", conf: "inconclusive", note: "Multi-controlled gates couple all qubits" },
-    { id: "uccsd", name: "VQE with a UCCSD ansatz", cls: "dense", conf: "inconclusive", note: "Long-range excitation gates across the register" },
-    { id: "rcs", name: "Random circuit sampling", cls: "dense", conf: "inconclusive", note: "Entanglement saturates quickly, the hardest case for tensor networks" }
+    { id: "clifford", name: "Clifford circuit, ten layers", cls: "clifford", conf: "measured", note: "As a state vector and, up to n = 60, on the stabiliser backends" },
+    { id: "ghz", name: "GHZ state preparation", cls: "lowent", conf: "measured", note: "As a tensor network up to n = 500" },
+    { id: "hea1", name: "Hardware-efficient ansatz, one layer", cls: "lowent", conf: "measured", note: "As a tensor network up to n = 500" },
+    { id: "hea", name: "Hardware-efficient ansatz, several layers", cls: "deep", conf: "measured", note: "Eight CNOT rings as a state vector; twenty as a tensor network" },
+    { id: "qft", name: "Quantum Fourier transform", cls: "dense", conf: "measured", note: "In every regime, up to 64 CPU nodes and sixteen GPUs" }
   ];
   var CIRCUIT_BY_ID = {};
   CIRCUITS.forEach(function (c) { CIRCUIT_BY_ID[c.id] = c; });
@@ -245,7 +237,7 @@
     }
     return CLASS_ORDER.filter(function (k) { return byCls[k]; }).map(function (k) {
       var list = byCls[k];
-      var doubtful = list.filter(function (c) { return c.conf === "inconclusive" || c.conf === "user" || c.conf === "unsure" || c.conf === "file"; });
+      var doubtful = list.filter(function (c) { return c.conf === "user" || c.conf === "unsure" || c.conf === "file"; });
       return {
         cls: k,
         circuits: list,
@@ -814,7 +806,10 @@
   // stacked pair still to be divided (pair), or the decision that still waits for an answer
   // (open). sv is true once the path enters the second level. Ids are those of js/flow.js.
   // q holds noise, structure (a class), output, n and, for the second level, hw ("cpu" or
-  // "gpu"), cpuScale and gpuCount; answers that are missing leave the path open.
+  // "gpu"), cpuScale and gpuCount; answers that are missing leave the path open. A branch
+  // chosen in the figure can say less than a full answer, which aim() records as a hint:
+  // notClifford (no circuit chosen yet), nRange ([from, to], no size chosen yet) and
+  // cpuNodes ("yes" or "no" to several nodes, no scale chosen yet).
   function figPath(q) {
     var p = { steps: [], end: null, pair: null, open: null, sv: false, none: null };
     function step(d, ans, note) { p.steps.push({ d: d, a: ans, note: note || null }); }
@@ -824,7 +819,15 @@
     if (q.noise === "yes") { step("noise", "yes"); return stop("dm"); }
     step("noise", "no");
     var s = q.structure, o = q.output, n = q.n;
-    if (!s) return wait("clifford");
+    // The size as far as it is known: n itself, or the range that a branch chosen in the figure leaves.
+    var lo = n != null ? n : q.nRange ? q.nRange[0] : null, hi = n != null ? n : q.nRange ? q.nRange[1] : null;
+    // Whether n ≤ k: true, false, or null while the size does not decide it.
+    function atMost(k) { return hi != null && hi <= k ? true : lo != null && lo > k ? false : null; }
+    if (!s) {
+      if (!q.notClifford) return wait("clifford");
+      step("clifford", "no");
+      return wait("tn");
+    }
     if (s === "clifford" && o !== "state") {
       step("clifford", "yes");
       if (!o) { p.pair = ["stabAer", "stabQibo"]; return p; }
@@ -838,39 +841,52 @@
       step("samples", "no");
     } else if (s === "deep" && !q.noTN && o !== "state") {
       // With growing entanglement the tensor network is used only beyond what one GPU node holds.
-      if (n == null || !o) return wait("tn");
-      if (n >= 35) { step("tn", "yes", "Beyond " + N + " = 34 the state exceeds one GPU node, and the tensor network remains an option for deeper circuits"); step("samples", "yes"); return stop("tnBox"); }
+      var oneNode = atMost(34);
+      if (oneNode === null || (!oneNode && !o)) return wait("tn");
+      if (!oneNode) { step("tn", "yes", "Beyond " + N + " = 34 the state exceeds one GPU node, and the tensor network remains an option for deeper circuits"); step("samples", "yes"); return stop("tnBox"); }
       step("tn", "no", "Added layers reduce the reach of the tensor network, and the state vector holds this size");
     } else {
       step("tn", "no", q.noTN ? "The tensor-network runs used A100 GPUs, and only CPUs were chosen"
         : s === "deep" ? "The task needs the full state, and the contraction into the full state hit the GPU memory limit at " + N + " = 30" : null);
     }
     p.sv = true;
-    if (n != null && n > LIMITS.cpuCluster) { p.none = "No platform of this dissertation holds the state"; return p; }
+    if (atMost(LIMITS.cpuCluster) === false) { p.none = "No platform of this dissertation holds the state"; return p; }
     if (!q.hw) return wait("gpu");
     if (q.hw === "cpu") {
       step("gpu", "no");
-      if (n == null) return wait("n33");
-      if (n > LIMITS.cpuNode) { step("n33", "no"); return stop("mpi34"); }
+      var fitsNode = atMost(LIMITS.cpuNode);
+      if (fitsNode === null) return wait("n33");
+      if (!fitsNode) { step("n33", "no"); return stop("mpi34"); }
       step("n33", "yes");
-      if (!q.cpuScale) return wait("nodes");
+      if (!q.cpuScale) {
+        // A branch chosen in the figure says whether several nodes are used, not yet how many.
+        if (!q.cpuNodes) return wait("nodes");
+        step("nodes", q.cpuNodes);
+        p.pair = q.cpuNodes === "yes" ? ["aerNodes", "mpiNodes"] : ["thread", "node"];
+        return p;
+      }
       if (q.cpuScale === "thread" || q.cpuScale === "node") { step("nodes", "no"); return stop(q.cpuScale); }
       step("nodes", "yes");
       return stop(q.cpuScale === "few" ? "aerNodes" : "mpiNodes");
     }
     step("gpu", "yes");
-    if (n == null) return wait("n23");
-    if (n <= 23) { step("n23", "yes"); return stop("gpuQulacs"); }
+    var small = atMost(23);
+    if (small === null) return wait("n23");
+    if (small) { step("n23", "yes"); return stop("gpuQulacs"); }
     step("n23", "no");
-    if (n > 34) {
+    var oneGpuNode = atMost(34);
+    if (oneGpuNode === null) return wait("n34");
+    if (!oneGpuNode) {
       step("n34", "no");
-      if (n > LIMITS.gpu16) { p.none = "More than the sixteen GPUs of this dissertation hold"; return p; }
+      if (atMost(LIMITS.gpu16) === false) { p.none = "More than the sixteen GPUs of this dissertation hold"; return p; }
       if (n === LIMITS.gpu16) return stop("aer16");
-      if (!q.gpuCount) { p.pair = ["cq8", "aer16"]; return p; }
+      if (n == null || !q.gpuCount) { p.pair = ["cq8", "aer16"]; return p; }
       return stop(q.gpuCount === "sixteen" ? "aer16" : "cq8");
     }
     step("n34", "yes");
-    if (n > 30) { step("n30", "no"); return stop("cqNode"); }
+    var oneGpu = atMost(30);
+    if (oneGpu === null) return wait("n30");
+    if (!oneGpu) { step("n30", "no"); return stop("cqNode"); }
     step("n30", "yes");
     return stop(circuitClass(q) === "qft" ? "aerGpu" : "cqGpu");
   }
@@ -880,7 +896,7 @@
   function figPaths(a) {
     if (a.noise !== "no") return [{ cls: null, hw: null, path: figPath(a) }];
     var groups = groupsOf(a);
-    if (!groups.length) return [{ cls: null, hw: null, path: figPath({ noise: "no" }) }];
+    if (!groups.length) return [{ cls: null, hw: null, path: figPath({ noise: "no", notClifford: a.notClifford }) }];
     var hw = hwList(a), hasGpu = hw.indexOf("gpu") !== -1, list = [];
     groups.forEach(function (g) {
       var base = groupBase(a, g);
@@ -943,6 +959,252 @@
     return { kind: "sv", blocks: blocks };
   }
 
+  /* ---------- answers from the figure ---------- */
+  // What each box of Figure 5.13 needs: noise, or the circuits and the output used when the
+  // current ones do not lead to the box (cls: the structure classes that can); the
+  // hardware; the sizes [from, to] that reach it and the size used when the current one
+  // does not; the scale; and the backends it names. Boxes of the second level take the
+  // QFT and the full state unless they say otherwise.
+  var BOX_AIM = {
+    dm: { noise: "yes", n: [2, 16, 10], b: ["Qiskit Aer"] },
+    stabAer: { circuits: ["clifford"], cls: ["clifford"], output: "samples", n: [2, 1000, 60], b: ["Qiskit Aer Stabilizer"] },
+    stabQibo: { circuits: ["clifford"], cls: ["clifford"], output: "tableau", n: [2, 1000, 60], b: ["Qibo Clifford"] },
+    tnBox: { circuits: ["ghz"], cls: ["lowent"], output: "samples", gpu: true, n: [2, 1000, 40], b: ["CUDA-Q"] },
+    mpi34: { hw: "cpu", n: [34, 39, 34], b: ["mpiQulacs"] },
+    aerNodes: { hw: "cpu", n: [2, 33, 30], cpuScale: "few", b: ["Qiskit Aer"] },
+    mpiNodes: { hw: "cpu", n: [2, 33, 30], cpuScale: "many", b: ["mpiQulacs"] },
+    thread: { hw: "cpu", n: [2, 33, 30], cpuScale: "thread", b: ["Qulacs"] },
+    node: { hw: "cpu", n: [2, 33, 30], cpuScale: "node", b: ["Qiskit Aer"] },
+    gpuQulacs: { hw: "gpu", n: [2, 23, 20], b: ["Qulacs"] },
+    cq8: { hw: "gpu", n: [35, 35, 35], gpuCount: "eight", b: ["CUDA-Q"] },
+    aer16: { hw: "gpu", n: [35, 36, 35], gpuCount: "sixteen", b: ["Qiskit Aer"] },
+    cqNode: { hw: "gpu", n: [31, 34, 32], b: ["CUDA-Q"] },
+    aerGpu: { hw: "gpu", n: [24, 30, 30], circuits: ["qft"], b: ["Qiskit Aer"] },
+    cqGpu: { hw: "gpu", n: [24, 30, 30], circuits: ["hea"], b: ["CUDA-Q", "Qulacs"] }
+  };
+
+  // The answers alone, without the hints of an earlier branch.
+  function copyAnswers(a) {
+    var b = {
+      noise: a.noise,
+      circuits: (a.circuits || []).slice(),
+      other: a.other ? { name: a.other.name, cls: a.other.cls, src: a.other.src || null } : null,
+      hw: hwList(a).slice()
+    };
+    ["output", "n", "cpuScale", "gpuCount"].forEach(function (k) { if (a[k] != null) b[k] = a[k]; });
+    return b;
+  }
+  function cloneAnswers(a) { return JSON.parse(JSON.stringify(a)); }
+  function setCircuits(b, ids) { b.circuits = ids.slice(); b.other = null; }
+  // Keep the circuits whose class passes; false if none is left.
+  function keepClasses(b, pass) {
+    b.circuits = b.circuits.filter(function (id) { return CIRCUIT_BY_ID[id] && pass(CIRCUIT_BY_ID[id].cls); });
+    if (b.other && !pass(b.other.cls === "unsure" ? "dense" : b.other.cls)) b.other = null;
+    return answered(b, "structure");
+  }
+  // The tableau exists only while a Clifford circuit is selected.
+  function fixOutput(b) {
+    if (b.output === "tableau" && !groupsOf(b).some(function (g) { return g.cls === "clifford"; })) b.output = "state";
+  }
+  // Whether some path of the answers takes this branch and none takes the other one.
+  function takes(b, d, ans) {
+    var taken = false, other = false;
+    figPaths(b).forEach(function (x) {
+      x.path.steps.forEach(function (s) { if (s.d === d) { if (s.a === ans) taken = true; else other = true; } });
+    });
+    return taken && !other;
+  }
+  // An outcome that a box stands for: it ends there, with a backend that the box names,
+  // inside the measured range.
+  function inBox(o, box) {
+    return !!o.path && o.path.end === box && BOX_AIM[box].b.indexOf(o.rec.b) !== -1 && !o.rec.out;
+  }
+  // The query reduced to the circuits whose outcomes the box stands for, or null if none.
+  function narrowed(b, box) {
+    if (!flow(b).done) return null;
+    var blocks = recommendAll(b).blocks, keep = {};
+    blocks.forEach(function (blk) {
+      if (blk.outcomes.length && blk.outcomes.every(function (o) { return inBox(o, box); })) keep[blk.cls] = true;
+    });
+    if (b.noise === "yes") return keep[null] ? b : null;
+    var c = cloneAnswers(b);
+    if (!keepClasses(c, function (cls) { return keep[cls]; })) return null;
+    fixOutput(c);
+    if (!flow(c).done) return null;
+    return recommendAll(c).blocks.every(function (blk) { return blk.outcomes.every(function (o) { return inBox(o, box); }); }) ? c : null;
+  }
+
+  // The answers that end in a box. The current circuits, output and size stay where the
+  // box stands for them; otherwise the circuit and the size of the box replace them.
+  function aimBox(a, box) {
+    var T = BOX_AIM[box];
+    var sizes = [];
+    if (a.n != null && a.n >= T.n[0] && a.n <= T.n[1]) sizes.push(a.n);
+    if (sizes.indexOf(T.n[2]) === -1) sizes.push(T.n[2]);
+    function shape(circuits, other, output) {
+      var c = copyAnswers(a);
+      c.noise = T.noise || "no";
+      if (c.noise === "yes") return c;
+      c.circuits = circuits.slice();
+      c.other = other ? { name: other.name, cls: other.cls, src: other.src || null } : null;
+      c.output = output;
+      if (T.hw) c.hw = [T.hw];
+      else if (T.gpu && c.hw.indexOf("gpu") === -1) c.hw = ["gpu"];
+      if (T.cpuScale) c.cpuScale = T.cpuScale;
+      if (T.gpuCount) c.gpuCount = T.gpuCount;
+      return c;
+    }
+    var shapes = [];
+    var circuits = T.circuits || ["qft"], output = T.output || "state";
+    if (T.noise === "yes") shapes.push(shape());
+    else {
+      if (answered(a, "structure")) {
+        shapes.push(shape(a.circuits, a.other, T.output || a.output || output));
+        if (!T.output && a.output !== "state") shapes.push(shape(a.circuits, a.other, "state"));
+        // Circuits of other classes can keep the query from completing, so try without them.
+        var own = copyAnswers(a);
+        if (T.cls && keepClasses(own, function (cls) { return T.cls.indexOf(cls) !== -1; })) {
+          shapes.push(shape(own.circuits, own.other, T.output || a.output || output));
+          if (!T.output && a.output !== "state") shapes.push(shape(own.circuits, own.other, "state"));
+        }
+      }
+      if (!T.output && a.output && a.output !== "tableau" && a.output !== output) shapes.push(shape(circuits, null, a.output));
+      shapes.push(shape(circuits, null, output));
+    }
+    for (var i = 0; i < shapes.length; i++) {
+      for (var j = 0; j < sizes.length; j++) {
+        var c = cloneAnswers(shapes[i]);
+        c.n = sizes[j];
+        c = narrowed(c, box);
+        if (c) return c;
+      }
+    }
+    var last = shapes[shapes.length - 1];
+    last.n = T.n[2];
+    return last;
+  }
+
+  // The answers after one branch of the figure is chosen. Only what the branch decides
+  // changes: the circuits for the questions on structure, the hardware, the size or the
+  // scale. Where the branch leaves an answer open, a hint keeps the path on it.
+  function aimEdge(a, d, ans) {
+    var b = copyAnswers(a), yes = ans === "yes";
+    // Hints of earlier branches stay while they still apply (dropHints()).
+    if (a.notClifford) b.notClifford = true;
+    if (a.nRange) b.nRange = a.nRange.slice();
+    if (a.cpuNodes) b.cpuNodes = a.cpuNodes;
+    // A branch that the answers already take changes nothing.
+    if (a.noise != null && takes(a, d, ans)) return dropHints(b);
+    function is(k) { return function (cls) { return cls === k; }; }
+    // Keep the size if it lies in the range; otherwise use the default, or leave the range
+    // open, narrowed by the range that an earlier branch left.
+    function within(lo, hi, def, open) {
+      if (b.n != null && b.n >= lo && b.n <= hi) return;
+      if (b.n == null && b.nRange && Math.max(lo, b.nRange[0]) <= Math.min(hi, b.nRange[1])) {
+        lo = Math.max(lo, b.nRange[0]);
+        hi = Math.min(hi, b.nRange[1]);
+      }
+      if (open && lo < hi) { delete b.n; b.nRange = [lo, hi]; } else b.n = Math.min(hi, Math.max(lo, def));
+    }
+    // Reach the second level, on CPUs or on GPUs.
+    function secondLevel(side) {
+      b.noise = "no";
+      if (!answered(b, "structure")) setCircuits(b, ["qft"]);
+      fixOutput(b);
+      if (!b.output) b.output = "state";
+      b.hw = [side];
+      if (b.n != null && b.n > LIMITS.cpuCluster) delete b.n;
+    }
+    if (d === "noise") {
+      b.noise = ans;
+      if (yes && (b.n == null || b.n > LIMITS.dm)) b.n = BOX_AIM.dm.n[2];
+      return finish(b);
+    }
+    if (d === "clifford") {
+      b.noise = "no";
+      if (yes) {
+        if (!keepClasses(b, is("clifford"))) setCircuits(b, ["clifford"]);
+        if (b.output !== "samples" && b.output !== "tableau") delete b.output;
+      } else if (b.output !== "state" || !answered(b, "structure")) {
+        // With the full state asked, Clifford circuits already take this branch.
+        if (!keepClasses(b, function (cls) { return cls !== "clifford"; })) b.notClifford = true;
+        if (b.output === "tableau") delete b.output;
+      }
+      return finish(b);
+    }
+    if (d === "tn") {
+      b.noise = "no";
+      if (yes) {
+        if (!keepClasses(b, is("lowent"))) setCircuits(b, ["ghz"]);
+        if (b.output === "tableau") delete b.output;
+        // The tensor-network runs used GPUs, so with CPUs alone the path would leave this branch.
+        if (b.output === "samples" && b.hw.length && b.hw.indexOf("gpu") === -1) b.hw = ["gpu"];
+      } else {
+        // A deeper circuit leaves the tensor network while one GPU node holds its state.
+        var deep = function () { return groupsOf(b).some(function (g) { return g.cls === "deep"; }); };
+        if (deep() && b.n == null && !b.nRange) b.nRange = [2, 34];
+        var stay = {};
+        figPaths(b).forEach(function (x) {
+          if (x.cls && x.path.steps.some(function (s) { return s.d === "tn" && s.a === "no"; })) stay[x.cls] = true;
+        });
+        if (!keepClasses(b, function (cls) { return stay[cls]; })) setCircuits(b, ["qft"]);
+        if (!deep() && !a.nRange) delete b.nRange;
+        fixOutput(b);
+      }
+      return finish(b);
+    }
+    if (d === "samples") {
+      b.noise = "no";
+      if (!keepClasses(b, is("lowent"))) setCircuits(b, ["ghz"]);
+      b.output = yes ? "samples" : "state";
+      if (yes && b.hw.indexOf("gpu") === -1) b.hw = ["gpu"];
+      return finish(b);
+    }
+    if (d === "gpu") secondLevel(yes ? "gpu" : "cpu");
+    else if (d === "n33") { secondLevel("cpu"); if (yes) within(2, 33, 30); else within(34, 39, 34); }
+    else if (d === "nodes") {
+      secondLevel("cpu");
+      within(2, 33, 30);
+      var several = b.cpuScale === "few" || b.cpuScale === "many", single = b.cpuScale === "thread" || b.cpuScale === "node";
+      if (yes ? !several : !single) { delete b.cpuScale; b.cpuNodes = ans; }
+    }
+    else if (d === "n23") { secondLevel("gpu"); if (yes) within(2, 23, 20); else within(24, 36, 30, true); }
+    else if (d === "n34") { secondLevel("gpu"); if (yes) within(24, 34, 30, true); else within(35, 36, 35); }
+    else if (d === "n30") { secondLevel("gpu"); if (yes) within(24, 30, 30); else within(31, 34, 32); }
+    else return b;
+    // Circuits that another method takes reach the state vector once the full state is asked.
+    if (!takes(b, d, ans)) {
+      b.output = "state";
+      if (!takes(b, d, ans)) setCircuits(b, ["qft"]);
+    }
+    return finish(b);
+  }
+  // Hints that an answer has replaced, or that the hardware no longer concerns.
+  function dropHints(b) {
+    if (answered(b, "structure") || b.noise === "yes") delete b.notClifford;
+    if (b.n != null) delete b.nRange;
+    if (b.cpuScale || hwList(b).indexOf("cpu") === -1) delete b.cpuNodes;
+    return b;
+  }
+  // Once every path has reached its box, the query needs at most a size, and GPUs for the
+  // tensor network, to give a result.
+  function finish(b) {
+    dropHints(b);
+    var paths = figPaths(b);
+    if (!paths.length || flow(b).done || !paths.every(function (x) { return x.path.end; })) return b;
+    var T = BOX_AIM[paths[0].path.end];
+    if (b.n == null && !b.nRange) b.n = T.n[2];
+    if (T.gpu && b.hw.indexOf("gpu") === -1) b.hw = ["gpu"];
+    return b;
+  }
+
+  // The answers that follow from a choice in the figure: { box: id } for one of its boxes,
+  // { d: decision, ans: "yes" or "no" } for one of its branches.
+  function aim(a, target) {
+    if (target.box) return BOX_AIM[target.box] ? aimBox(a, target.box) : copyAnswers(a);
+    return aimEdge(a, target.d, target.ans);
+  }
+
   window.Selector = {
     QUESTIONS: QUESTIONS,
     COLOURS: COLOURS,
@@ -950,6 +1212,9 @@
     tintOf: tintOf,
     figPath: figPath,
     figPaths: figPaths,
+    aim: aim,
+    dropHints: dropHints,
+    BOX_AIM: BOX_AIM,
     REPOS: REPOS,
     CLASSES: CLASSES,
     CLASS_ORDER: CLASS_ORDER,

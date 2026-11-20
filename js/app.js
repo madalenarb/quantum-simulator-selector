@@ -1,9 +1,9 @@
 /*
  * Interface of the Quantum Simulator Selector, in two phases, the questions and the
- * result, beside Figure 5.13 (js/flow.js), in which the path of the answers is drawn.
- * Decision logic lives in window.Selector (js/rules.js), the measurements in js/data.js
- * and js/evidence.js, the OpenQASM reader in js/qasm.js, run templates in
- * js/runconfig.js and the side tools in js/tools.js.
+ * result, beside Figure 5.13 (js/flow.js), in which the path of the answers is drawn and
+ * whose branches and boxes also set the answers. Decision logic lives in window.Selector
+ * (js/rules.js), the measurements in js/data.js and js/evidence.js, the OpenQASM reader in
+ * js/qasm.js, the run configurations in js/runconfig.js and the side tools in js/tools.js.
  */
 (function () {
   "use strict";
@@ -13,7 +13,7 @@
   function $(id) { return document.getElementById(id); }
   var views = { ask: $("askView"), result: $("resultView") };
   var stepsEl = $("steps"), reviewBar = $("reviewBar"), restartBtn = $("restartBtn");
-  var colText = $("colText"), colFig = $("colFig"), flowScroll = $("flowScroll");
+  var colFig = $("colFig"), flowScroll = $("flowScroll");
   var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   // Two columns from this width (css/style.css); below it the figure follows the text.
   var wide = window.matchMedia ? window.matchMedia("(min-width: 1244px)") : { matches: false };
@@ -22,7 +22,7 @@
 
   var EXAMPLE = {
     noise: "no",
-    circuits: ["qft", "ghz", "grover"],
+    circuits: ["qft", "ghz"],
     other: null,
     output: "samples",
     n: 30,
@@ -208,6 +208,8 @@
   function afterAnswer() {
     editing = null;
     isExample = false;
+    holdFigure = false;
+    S.dropHints(A);
     var f = S.flow(A);
     if (f.done && !review) { showResult(); return; }
     renderAsk({ focus: true });
@@ -232,6 +234,7 @@
   function reset() {
     clearUrl();
     A = emptyAnswers();
+    holdFigure = false;
     review = false; isExample = false; editing = null; nDraft = 30; qasmInfo = null;
     draft = freshDraft();
     lastResult = null;
@@ -240,6 +243,7 @@
   }
   function showExample() {
     A = clone(EXAMPLE);
+    holdFigure = false;
     isExample = true; review = false; editing = null;
     showResult();
   }
@@ -260,6 +264,7 @@
     return card;
   }
   function reopen(id) {
+    holdFigure = false;
     editing = id;
     if (id === "n" && A.n != null) nDraft = A.n;
     draft = freshDraft();
@@ -276,6 +281,11 @@
     if (id === "output" && qasmInfo && A.other && A.other.src === "qasm" && qasmInfo.measures) {
       card.appendChild(el("p", "q-hint", "Your file ends in " + qasmInfo.measures + " measurement" + (qasmInfo.measures === 1 ? "" : "s") + ", so samples may be what it needs."));
     }
+    // What a branch chosen in the figure already says about this question.
+    var said = id === "structure" && A.notClifford ? "circuits with gates outside the Clifford set"
+      : id === "n" && A.nRange ? (A.nRange[0] <= 2 ? "at most " + A.nRange[1] : A.nRange[1] >= S.LIMITS.gpu16 ? "at least " + A.nRange[0] : "from " + A.nRange[0] + " to " + A.nRange[1]) + " qubits"
+      : id === "cpuScale" && A.cpuNodes ? (A.cpuNodes === "yes" ? "several nodes" : "a single node") : null;
+    if (said) card.appendChild(el("p", "q-hint", "Chosen in the figure: " + said + "."));
 
     if (id === "n") card.appendChild(qubitControls());
     else if (q.multi === "circuits") card.appendChild(circuitPicker());
@@ -357,8 +367,6 @@
         txt.appendChild(el("span", "t", c.name));
         txt.appendChild(el("span", "d", c.note));
         b.appendChild(txt);
-        b.appendChild(el("span", "conf conf-" + c.conf, S.CONFIDENCE[c.conf].label));
-        b.title = S.CONFIDENCE[c.conf].d;
         b.addEventListener("click", function () {
           var i = draft.circuits.indexOf(c.id);
           if (i === -1) draft.circuits.push(c.id); else draft.circuits.splice(i, 1);
@@ -808,35 +816,98 @@
   function updateFigure() {
     lastPaths = currentPaths();
     F.mark(flowSvg, lastPaths);
-    placeColumns();
+    placeFigure();
   }
-  // On wide screens each column stays in view while the other scrolls: a column shorter
-  // than the window sticks at the top, a taller one once its end is reached, and the
-  // figure, if taller than the window, where the path ends. On narrow screens the figure
-  // is panned sideways to that point.
-  function placeColumns() {
+  // On wide screens the figure stays in view beside the text for the whole length of the
+  // page and, where the window is lower than the figure, scrolls on its own
+  // (css/style.css), here to the point where the path ends. On narrow screens the figure
+  // follows the text and is panned sideways to that point. After a choice made in the
+  // figure itself (holdFigure), the figure stays where it is.
+  var holdFigure = false;
+  function placeFigure() {
     var fp = F.focusPoint(lastPaths);
     if (!wide.matches) {
-      colText.style.top = ""; colFig.style.top = "";
       var pans = flowScroll.scrollWidth > flowScroll.clientWidth + 1;
       $("panHint").hidden = !pans;
-      if (pans) flowScroll.scrollLeft = (fp ? fp.x : 0.5) * flowScroll.scrollWidth - flowScroll.clientWidth / 2;
+      if (pans && !holdFigure) flowScroll.scrollLeft = (fp ? fp.x : 0.5) * flowScroll.scrollWidth - flowScroll.clientWidth / 2;
       return;
     }
     $("panHint").hidden = true;
-    var vh = window.innerHeight, th = colText.offsetHeight, fh = colFig.offsetHeight;
-    colText.style.top = (th + 32 <= vh ? 16 : vh - th - 16) + "px";
-    var top = 16;
-    if (fh + 32 > vh) {
-      var svgH = flowSvg.getBoundingClientRect().height;
-      top = Math.max(vh - fh - 16, Math.min(16, vh / 2 - (fp ? fp.y : 0.5) * svgH));
-    }
-    colFig.style.top = Math.round(top) + "px";
+    if (holdFigure || colFig.scrollHeight <= colFig.clientHeight + 1) return;
+    var svgBox = flowSvg.getBoundingClientRect();
+    var svgTop = svgBox.top - colFig.getBoundingClientRect().top + colFig.scrollTop;
+    colFig.scrollTop = fp ? Math.max(0, svgTop + fp.y * svgBox.height - colFig.clientHeight / 2) : 0;
   }
   var placeTimer = null;
-  function placeSoon() { clearTimeout(placeTimer); placeTimer = setTimeout(placeColumns, 60); }
-  window.addEventListener("resize", placeSoon);
-  if (window.ResizeObserver) new window.ResizeObserver(placeSoon).observe(colText);
+  window.addEventListener("resize", function () { clearTimeout(placeTimer); placeTimer = setTimeout(placeFigure, 60); });
+
+  /* ---------- choosing in the figure ---------- */
+  // Each yes, no and box of the figure is a button. Choosing one sets the answers that it
+  // implies (Selector.aim), keeps the others, and shows the result once the query is complete.
+  var picks = Array.prototype.slice.call(flowSvg.querySelectorAll(".pick"));
+  var flowStatus = $("flowStatus");
+  function signature(a) {
+    return JSON.stringify([a.noise || null, a.circuits || [], a.other || null, a.output || null, a.n == null ? null : a.n,
+      S.hwList(a), a.cpuScale || null, a.gpuCount || null, !!a.notClifford, a.nRange || null, a.cpuNodes || null]);
+  }
+  function pickedName(g) {
+    var node = g.getAttribute("data-node");
+    if (node) return F.BOXES[node].b + ", " + strip(F.BOXES[node].text);
+    var e = g.getAttribute("data-edge").split(":");
+    return strip(F.DECISIONS[e[0]].text) + " " + e[1];
+  }
+  function pickInFigure(g) {
+    var node = g.getAttribute("data-node"), edge = String(g.getAttribute("data-edge") || "").split(":");
+    var next = S.aim(A, node ? { box: node } : { d: edge[0], ans: edge[1] });
+    var complete = S.flow(next).done;
+    if (signature(next) === signature(A) && (complete ? !views.result.hidden : views.result.hidden)) {
+      flowStatus.textContent = pickedName(g) + ": the answers already say so.";
+      return;
+    }
+    clearUrl();
+    A = next;
+    review = false; isExample = false; editing = null;
+    holdFigure = true;
+    nDraft = A.n != null ? A.n : A.nRange ? Math.min(A.nRange[1], Math.max(A.nRange[0], 30)) : A.noise === "yes" ? 12 : 30;
+    draft = freshDraft();
+    if (complete) {
+      showResult();
+      flowStatus.textContent = pickedName(g) + ": answers set, result shown.";
+      return;
+    }
+    // Where the figure follows the questions, keep it under the pointer while they change height.
+    var before = flowSvg.getBoundingClientRect().top;
+    renderAsk({ focus: false });
+    var shift = flowSvg.getBoundingClientRect().top - before;
+    if (!wide.matches && Math.abs(shift) > 1) window.scrollBy(0, shift);
+    var f = S.flow(A), waiting = null;
+    for (var i = 0; i < f.qs.length; i++) if (!S.answered(A, f.qs[i])) { waiting = f.qs[i]; break; }
+    flowStatus.textContent = pickedName(g) + ": answers set." + (waiting ? " Next question: " + strip(S.QUESTIONS[waiting].prompt) : "");
+  }
+  flowSvg.addEventListener("click", function (e) {
+    var g = e.target && e.target.closest ? e.target.closest(".pick") : null;
+    if (g && flowSvg.contains(g)) pickInFigure(g);
+  });
+  // One tab stop for the figure: the arrow keys move between its buttons.
+  function roveTo(g) {
+    picks.forEach(function (p) { p.setAttribute("tabindex", p === g ? "0" : "-1"); });
+  }
+  if (picks.length) roveTo(picks[0]);
+  flowSvg.addEventListener("focusin", function (e) {
+    var g = e.target && e.target.closest ? e.target.closest(".pick") : null;
+    if (g) roveTo(g);
+  });
+  flowSvg.addEventListener("keydown", function (e) {
+    var g = e.target && e.target.closest ? e.target.closest(".pick") : null;
+    if (!g) return;
+    var i = picks.indexOf(g), to = null;
+    if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") { e.preventDefault(); pickInFigure(g); return; }
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") to = picks[(i + 1) % picks.length];
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") to = picks[(i - 1 + picks.length) % picks.length];
+    else if (e.key === "Home") to = picks[0];
+    else if (e.key === "End") to = picks[picks.length - 1];
+    if (to) { e.preventDefault(); roveTo(to); to.focus(); }
+  });
 
   /* ---------- result ---------- */
   function showResult() {
@@ -921,34 +992,44 @@
     return p;
   }
 
-  function runConfigView(rec, block) {
-    var cfg = RC.forOutcome(rec, {
-      n: A.n, cls: block && block.cls ? block.cls : "dense",
+  // How the dissertation ran the backend of this outcome, for the circuits and the size of
+  // the query, and where the library documents those settings (js/runconfig.js).
+  function runConfigOf(rec, block) {
+    return RC.forOutcome(rec, {
+      n: A.n,
       output: A.output === "tableau" && block && block.cls !== "clifford" ? "state" : A.output,
-      fromFile: !!(block && block.circuits.some(function (c) { return c.conf === "file"; }))
+      circuits: block ? block.circuits : [],
+      noisy: A.noise === "yes"
     });
+  }
+  function runConfigView(rec, block) {
+    var cfg = runConfigOf(rec, block);
     if (!cfg) return null;
     var det = el("details", "runcfg");
-    det.appendChild(el("summary", "", "<span class=\"ev-h\">Run configuration</span> <span class=\"ev-refs\">" + esc(cfg.file) + ", a template</span>"));
+    det.appendChild(el("summary", "", "<span class=\"ev-h\">Run configuration</span> <span class=\"ev-refs\">as run in the dissertation</span>"));
     var body = el("div", "rc-body");
-    body.appendChild(el("p", "rc-note", "A starting point set up as the dissertation ran this backend, with an example circuit of this structure class to replace with yours. Other versions or sites may need other options."));
-    var bar = el("div", "rc-bar");
-    var copy = el("button", "btn ghost small", "Copy code");
-    copy.type = "button";
-    var st = el("span", "status-msg");
-    st.setAttribute("role", "status");
-    bar.appendChild(copy); bar.appendChild(st);
-    body.appendChild(bar);
-    var holder = el("div");
-    body.appendChild(holder);
-    var pre = el("pre", "code");
-    var code = el("code", "lang-" + cfg.lang);
-    code.textContent = cfg.text;
-    pre.appendChild(code);
-    pre.tabIndex = 0;
-    pre.setAttribute("aria-label", "Template " + cfg.file);
-    body.appendChild(pre);
-    copy.addEventListener("click", function () { copyText(cfg.text, st, holder, "Template to copy"); });
+    body.appendChild(el("p", "rc-note", "How the dissertation ran this backend in this regime, written for the circuits and the size of your query, with tips where good practice goes beyond those runs. The calls that set it up are in the documentation of the library, at the pages listed below."));
+    var dl = el("dl", "rc");
+    cfg.rows.forEach(function (r) {
+      dl.appendChild(el("dt", "", r[0]));
+      dl.appendChild(el("dd", "", r[1]));
+    });
+    body.appendChild(dl);
+    body.appendChild(el("p", "rc-docs-h", "In the documentation of " + esc(cfg.lib)));
+    var ul = el("ul", "rc-docs");
+    cfg.docs.forEach(function (d) {
+      var li = el("li");
+      var a = el("a", "", esc(d.t));
+      a.href = d.url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.setAttribute("aria-label", cfg.lib + " documentation, " + d.t + " (opens in a new tab)");
+      li.appendChild(a);
+      li.appendChild(el("span", "d", ": " + d.d));
+      ul.appendChild(li);
+    });
+    body.appendChild(ul);
+    body.appendChild(el("p", "rc-foot", cfg.foot));
     det.appendChild(body);
     return det;
   }
@@ -1113,6 +1194,12 @@
         if (r.out) lines.push("Range: " + strip(r.out));
         (r.caveats || []).forEach(function (c) { lines.push("- " + strip(c)); });
         E.lines(o.model || E.model(r, { n: A.n, A: A })).forEach(function (l) { lines.push(strip(l)); });
+        var cfg = runConfigOf(r, b);
+        if (cfg) {
+          lines.push("Run configuration, as run in the dissertation:");
+          cfg.rows.forEach(function (row) { lines.push("  " + row[0] + ": " + strip(row[1].replace(/<br>|<\/span>/g, " ")).trim()); });
+          cfg.docs.forEach(function (d) { lines.push("  Documentation of " + cfg.lib + ", " + d.t + ": " + d.url); });
+        }
       });
     });
     lines.push("", "Fastest configurations measured on Deucalion and on the i9-13900KS platform, in double precision.");
@@ -1148,6 +1235,7 @@
   $("showBtn").addEventListener("click", function () { if (S.flow(A).done) showResult(); });
   $("changeBtn").addEventListener("click", function () {
     clearUrl();
+    holdFigure = false;
     review = true; editing = null; isExample = false;
     renderAsk({ focus: false });
     scrollToEl(views.ask);
