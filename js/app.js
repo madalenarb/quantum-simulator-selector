@@ -1,26 +1,28 @@
 /*
- * Interface of the Quantum Simulator Selector, in three phases: the questionnaire
- * ("measuring"), a short collapse sequence, and the readout. Decision logic lives in
- * window.Selector (js/rules.js), the measurements in js/data.js and js/evidence.js,
- * the OpenQASM reader in js/qasm.js, run templates in js/runconfig.js and the side
- * tools in js/tools.js.
+ * Interface of the Quantum Simulator Selector, in two phases, the questions and the
+ * result, beside Figure 5.13 (js/flow.js), in which the path of the answers is drawn and
+ * whose branches and boxes also set the answers. Decision logic lives in window.Selector
+ * (js/rules.js), the measurements in js/data.js and js/evidence.js, the OpenQASM reader in
+ * js/qasm.js, the run configurations in js/runconfig.js and the side tools in js/tools.js.
  */
 (function () {
   "use strict";
 
-  var S = window.Selector, E = window.Evidence, Q = window.QASM, RC = window.RunConfig, T = window.Tools;
+  var S = window.Selector, E = window.Evidence, Q = window.QASM, RC = window.RunConfig, T = window.Tools, F = window.Flow;
   var CANONICAL = "https://madalenarb.github.io/quantum-simulator-selector/";
   function $(id) { return document.getElementById(id); }
-  var views = { ask: $("askView"), collapse: $("collapseView"), result: $("resultView") };
-  var stepsEl = $("steps"), statusText = $("statusText"), reviewBar = $("reviewBar"), restartBtn = $("restartBtn");
-  var captionEl = $("blochCaption");
+  var views = { ask: $("askView"), result: $("resultView") };
+  var stepsEl = $("steps"), reviewBar = $("reviewBar"), restartBtn = $("restartBtn");
+  var colFig = $("colFig"), flowScroll = $("flowScroll");
   var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var hero = window.Bloch.create($("bloch"), { speed: 0.012 });
-  var big = window.Bloch.create($("blochBig"), { speed: 0.02 });
+  // Two columns from this width (css/style.css); below it the figure follows the text.
+  var wide = window.matchMedia ? window.matchMedia("(min-width: 1244px)") : { matches: false };
+  flowScroll.innerHTML = F.svg();
+  var flowSvg = flowScroll.querySelector("svg");
 
   var EXAMPLE = {
     noise: "no",
-    circuits: ["qft", "ghz", "grover"],
+    circuits: ["qft", "ghz"],
     other: null,
     output: "samples",
     n: 30,
@@ -29,13 +31,12 @@
   };
 
   var A = emptyAnswers();
-  var review = false;      // true after "Change answers": edits wait for "Measure again"
+  var review = false;      // true after "Change answers": edits wait for "Show the result"
   var isExample = false;
   var editing = null;      // question reopened by "Change" or "Previous"
   var nDraft = 30;
   var draft = freshDraft();
-  var timers = [];
-  var lastResult = null, lastFlow = null;
+  var lastResult = null, lastFlow = null, lastPaths = [];
   var qasmInfo = null;     // analysis of the last OpenQASM file read
 
   /* ---------- helpers ---------- */
@@ -62,7 +63,6 @@
   function lc(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
   function warn(s) { return "<span class=\"warn\">" + s + "</span>"; }
   function sup(s) { return String(s).replace(/2\^(\d+)/g, function (m, d) { return "2" + d.split("").map(function (x) { return "⁰¹²³⁴⁵⁶⁷⁸⁹"[+x]; }).join(""); }); }
-  function clearTimers() { timers.forEach(clearTimeout); timers = []; }
   function show(name) { Object.keys(views).forEach(function (k) { views[k].hidden = k !== name; }); }
   function scrollToEl(node) {
     var top = node.getBoundingClientRect().top + window.pageYOffset - 16;
@@ -90,7 +90,7 @@
   var CLS_KEYS = S.OTHER_CLASSES;
   var ALLOWED = {
     noise: ["no", "yes"], out: ["samples", "state", "tableau"], cpu: ["thread", "node", "few", "many"],
-    host: ["yes", "no"], gpus: ["eight", "sixteen"]
+    gpus: ["eight", "sixteen"]
   };
   function encode(a) {
     var p = [];
@@ -104,7 +104,6 @@
     add("n", a.n);
     if (a.hw && a.hw.length) add("hw", a.hw.join(","));
     add("cpu", a.cpuScale);
-    add("host", a.host);
     add("gpus", a.gpuCount);
     return p.join("&");
   }
@@ -130,7 +129,6 @@
     if (/^\d{1,4}$/.test(params.n || "")) { var n = parseInt(params.n, 10); if (n >= 2 && n <= 1000) a.n = n; }
     if (params.hw) a.hw = ["gpu", "cpu"].filter(function (h) { return String(params.hw).split(",").indexOf(h) !== -1; });
     if (ALLOWED.cpu.indexOf(params.cpu) !== -1) a.cpuScale = params.cpu;
-    if (ALLOWED.host.indexOf(params.host) !== -1) a.host = params.host;
     if (ALLOWED.gpus.indexOf(params.gpus) !== -1) a.gpuCount = params.gpus;
     return a;
   }
@@ -169,8 +167,8 @@
   function liveText(n) {
     if (A.noise === "yes") {
       var fitD = firstFit("dm", n);
-      return "Density matrix · " + S.bytesLog2(2 * n + 4) + " · " +
-        (fitD ? "fits " + lc(fitD.label) : warn("more than one x86 job holds; exact density matrices stop at n = 16"));
+      return "A density matrix of " + S.bytesLog2(2 * n + 4) + ", " +
+        (fitD ? "which the platform of the noise study holds" : warn("more than the platform of the noise study holds; exact density matrices stop at n = 16"));
     }
     var tmp = clone(A); tmp.n = n;
     var ms = S.groupsOf(tmp).map(function (g) { return S.methodOf(tmp, g); });
@@ -182,7 +180,7 @@
       return "A state vector would need " + size + ", but your circuits use " + how.join(" and ") + " instead";
     }
     var fit = firstFit("sv", n);
-    return "State vector · " + size + " · " + (fit ? "fits " + lc(fit.label) : warn("beyond every platform in this dissertation"));
+    return "A state vector of " + size + ", " + (fit ? "which fits " + lc(fit.label) : warn("beyond every platform in this dissertation"));
   }
 
   /* ---------- labels ---------- */
@@ -204,20 +202,16 @@
     for (var j = 0; j < opts.length; j++) if (opts[j].v === A[id]) return opts[j].t;
     return "";
   }
-  function ket(i, count) {
-    var bits = count <= 2 ? 1 : 2;
-    var s = i.toString(2);
-    while (s.length < bits) s = "0" + s;
-    return "|" + s + "⟩";
-  }
   function helpFor(q) { return typeof q.help === "function" ? q.help(A) : q.help; }
 
   /* ---------- answering ---------- */
   function afterAnswer() {
     editing = null;
     isExample = false;
+    holdFigure = false;
+    S.dropHints(A);
     var f = S.flow(A);
-    if (f.done && !review) { startCollapse(); return; }
+    if (f.done && !review) { showResult(); return; }
     renderAsk({ focus: true });
   }
   function setAnswer(id, v) {
@@ -238,20 +232,20 @@
     afterAnswer();
   }
   function reset() {
-    clearTimers();
     clearUrl();
     A = emptyAnswers();
+    holdFigure = false;
     review = false; isExample = false; editing = null; nDraft = 30; qasmInfo = null;
     draft = freshDraft();
-    hero.reset();
+    lastResult = null;
     renderAsk({ focus: true });
     window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
   }
   function showExample() {
-    clearTimers();
     A = clone(EXAMPLE);
+    holdFigure = false;
     isExample = true; review = false; editing = null;
-    startCollapse();
+    showResult();
   }
 
   /* ---------- questionnaire ---------- */
@@ -270,6 +264,7 @@
     return card;
   }
   function reopen(id) {
+    holdFigure = false;
     editing = id;
     if (id === "n" && A.n != null) nDraft = A.n;
     draft = freshDraft();
@@ -279,14 +274,18 @@
   function questionCard(id, index, f) {
     var q = S.QUESTIONS[id];
     var card = el("div", "card");
-    card.appendChild(el("p", "q-eyebrow", "Gate " + (index + 1) + " · " + q.short));
-    var prompt = el("h3", "q-prompt", q.prompt);
+    var prompt = el("h4", "q-prompt", q.prompt);
     prompt.id = "q-" + id;
     card.appendChild(prompt);
     card.appendChild(el("p", "q-help", helpFor(q)));
     if (id === "output" && qasmInfo && A.other && A.other.src === "qasm" && qasmInfo.measures) {
       card.appendChild(el("p", "q-hint", "Your file ends in " + qasmInfo.measures + " measurement" + (qasmInfo.measures === 1 ? "" : "s") + ", so samples may be what it needs."));
     }
+    // What a branch chosen in the figure already says about this question.
+    var said = id === "structure" && A.notClifford ? "circuits with gates outside the Clifford set"
+      : id === "n" && A.nRange ? (A.nRange[0] <= 2 ? "at most " + A.nRange[1] : A.nRange[1] >= S.LIMITS.gpu16 ? "at least " + A.nRange[0] : "from " + A.nRange[0] + " to " + A.nRange[1]) + " qubits"
+      : id === "cpuScale" && A.cpuNodes ? (A.cpuNodes === "yes" ? "several nodes" : "a single node") : null;
+    if (said) card.appendChild(el("p", "q-hint", "Chosen in the figure: " + said + "."));
 
     if (id === "n") card.appendChild(qubitControls());
     else if (q.multi === "circuits") card.appendChild(circuitPicker());
@@ -300,7 +299,7 @@
       keep.addEventListener("click", function () { editing = null; renderAsk({ focus: true }); });
       nav.appendChild(keep);
     } else if (index > 0) {
-      var prev = el("button", "linkbtn", "← Previous question");
+      var prev = el("button", "linkbtn", "Previous question");
       prev.type = "button";
       prev.addEventListener("click", function () { reopen(f.qs[index - 1]); });
       nav.appendChild(prev);
@@ -319,7 +318,7 @@
       b.type = "button";
       b.id = "opt-" + id + "-" + o.v;
       b.setAttribute("aria-pressed", A[id] === o.v ? "true" : "false");
-      b.appendChild(el("span", "ket", ket(i, opts.length)));
+      b.appendChild(el("span", "mark", ""));
       b.appendChild(el("span", "t", o.t));
       b.appendChild(el("span", "d", o.d));
       b.addEventListener("click", function () { setAnswer(id, o.v); });
@@ -368,8 +367,6 @@
         txt.appendChild(el("span", "t", c.name));
         txt.appendChild(el("span", "d", c.note));
         b.appendChild(txt);
-        b.appendChild(el("span", "conf conf-" + c.conf, S.CONFIDENCE[c.conf].label));
-        b.title = S.CONFIDENCE[c.conf].d;
         b.addEventListener("click", function () {
           var i = draft.circuits.indexOf(c.id);
           if (i === -1) draft.circuits.push(c.id); else draft.circuits.splice(i, 1);
@@ -509,18 +506,18 @@
       qres.innerHTML = "";
       var card = el("div", "qasm-card");
       var fname = a.fileName ? "<b>" + esc(a.fileName) + "</b>" : "Your circuit";
-      card.appendChild(el("p", "qasm-h", fname + (a.version ? " · OpenQASM " + esc(a.version) : "")));
+      card.appendChild(el("p", "qasm-h", fname + (a.version ? ", OpenQASM " + esc(a.version) : "")));
       var dl = el("dl", "qasm-dl");
       function row(k, v) { dl.appendChild(el("dt", "", k)); dl.appendChild(el("dd", "", v)); }
       row("Qubits", String(a.n) + (a.n > 1000 ? " (the selector asks for at most 1000)" : ""));
-      row("Gates", a.gates.toLocaleString("en-GB") + (a.gates ? " · " + a.oneQ.toLocaleString("en-GB") + " one-qubit, " + a.twoQ.toLocaleString("en-GB") + " two-qubit" + (a.multiQ ? ", " + a.multiQ + " on three or more" : "") : ""));
+      row("Gates", a.gates.toLocaleString("en-GB") + (a.gates ? ", of which " + a.oneQ.toLocaleString("en-GB") + " one-qubit and " + a.twoQ.toLocaleString("en-GB") + " two-qubit" + (a.multiQ ? ", and " + a.multiQ + " on three or more" : "") : ""));
       row("Depth", a.depth.toLocaleString("en-GB"));
       if (a.measures) row("Measurements", String(a.measures));
       row("Clifford only", a.clifford ? "Yes" : "No" + (a.firstNonClifford ? ", first non-Clifford gate " + esc(a.firstNonClifford.name) + " on line " + a.firstNonClifford.line : ""));
       if (a.gateCounts.length) row("Most used", esc(a.gateCounts.join(", ")));
       card.appendChild(dl);
       var info = S.CLASSES[a.cls];
-      card.appendChild(el("p", "qasm-cls", "Suggested structure · <b>" + info.name + "</b>"));
+      card.appendChild(el("p", "qasm-cls", "Suggested structure: <b>" + info.name + "</b>"));
       var ul = el("ul", "qasm-why");
       a.reasons.forEach(function (r) { ul.appendChild(el("li", "", esc(sup(r)))); });
       if (a.unknownGates.length) ul.appendChild(el("li", "", "Gates without a definition in the file (" + esc(a.unknownGates.slice(0, 5).join(", ")) + ") count as non-Clifford gates on their qubits."));
@@ -587,7 +584,7 @@
       var count = sel.circuits.length + (sel.other ? 1 : 0);
       var classes = S.groupsOf(sel).length;
       foot.hint.classList.remove("error");
-      foot.hint.textContent = count ? count + " selected · " + classes + " structure class" + (classes > 1 ? "es" : "") : "";
+      foot.hint.textContent = count ? count + " selected, in " + classes + " structure class" + (classes > 1 ? "es" : "") : "";
     }
     function fail(errEl, focusEl, msg) {
       errEl.textContent = msg;
@@ -699,7 +696,7 @@
     var picks = cfg.chips.slice();
     if (qasmInfo && A.other && A.other.src === "qasm" && picks.indexOf(qasmInfo.n) === -1 && qasmInfo.n <= 1000) picks.unshift(qasmInfo.n);
     picks.forEach(function (v) {
-      var c = el("button", "chip", String(v) + (qasmInfo && A.other && A.other.src === "qasm" && v === qasmInfo.n ? " · your file" : ""));
+      var c = el("button", "chip", String(v) + (qasmInfo && A.other && A.other.src === "qasm" && v === qasmInfo.n ? " (your file)" : ""));
       c.type = "button";
       c.addEventListener("click", function () { showN(v, false); });
       chips.appendChild(c);
@@ -756,6 +753,7 @@
     return box;
   }
 
+  var LEVELS = { 1: ["First level", "simulation method"], 2: ["Second level", "state-vector backend"] };
   function renderAsk(opts) {
     opts = opts || {};
     show("ask");
@@ -767,25 +765,32 @@
     if (current && !editing && (current === "structure" || current === "hw")) draft = freshDraft();
 
     stepsEl.innerHTML = "";
+    var level = null, list = null;
     f.qs.forEach(function (id, idx) {
+      var lv = S.QUESTIONS[id].level;
+      if (lv !== level) {
+        level = lv;
+        var group = el("div", "levelgroup");
+        group.appendChild(el("h3", "level", "<b>" + LEVELS[lv][0] + "</b>" + LEVELS[lv][1]));
+        list = el("ol", "steps");
+        group.appendChild(list);
+        stepsEl.appendChild(group);
+      }
       var li = el("li", "step");
       var isCurrent = id === current;
       if (isCurrent) li.classList.add("current");
       else if (S.answered(A, id)) li.classList.add("done");
-      var g = el("span", "gate", S.QUESTIONS[id].gate);
-      g.setAttribute("aria-hidden", "true");
-      li.appendChild(g);
+      var num = el("span", "num", String(idx + 1));
+      num.setAttribute("aria-hidden", "true");
+      li.appendChild(num);
       li.appendChild(isCurrent ? questionCard(id, idx, f) : doneRow(id));
-      stepsEl.appendChild(li);
+      list.appendChild(li);
     });
 
     var answeredCount = f.qs.filter(function (id) { return S.answered(A, id); }).length;
     restartBtn.hidden = answeredCount === 0;
-    var idxCur = current ? f.qs.indexOf(current) : -1;
-    statusText.textContent = review && !current ? "Reviewing your answers" : "Measuring · gate " + (idxCur + 1);
     reviewBar.hidden = !(review && f.done && !editing);
-    hero.set(answeredCount / (f.qs.length + 1), false, false);
-    captionEl.textContent = review && f.done && !editing ? "Ready to measure again" : "Measuring";
+    updateFigure();
 
     if (opts.focus) {
       var target = current
@@ -798,78 +803,125 @@
     }
   }
 
-  /* ---------- collapse sequence ---------- */
-  var SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹";
-  function supN(k) { return String(k).split("").map(function (d) { return SUP[+d]; }).join(""); }
-  function buildLines() {
-    var n = A.n;
-    var mem = A.noise === "yes"
-      ? "Checking the memory wall: 16 B × 4" + supN(n) + " = " + S.bytesLog2(2 * n + 4) + "…"
-      : "Checking the memory wall: 16 B × 2" + supN(n) + " = " + S.bytesLog2(n + 4) + "…";
-    var pool = [
-      "Applying the Born rule to your answers…",
-      "Decohering the other candidates…",
-      "Fusing gates before the clock starts…",
-      "Waiting for InfiniBand at 0.9 GB/s…",
-      "Tracing out the environment…",
-      "Contracting the tensor network of options…",
-      "Asking Gottesman and Knill…",
-      "Swapping a global qubit with a local one…",
-      "Skipping the copy to host memory…",
-      "Allocating a 2 MiB temporary, as QuEST does at n = 17…"
-    ];
-    for (var i = pool.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1));
-      var t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+  /* ---------- Figure 5.13 ---------- */
+  // The paths to draw: those of the outcomes once a result is shown, otherwise the answers so far.
+  function currentPaths() {
+    if (!views.result.hidden && lastResult) {
+      var list = [];
+      lastResult.blocks.forEach(function (b) { b.outcomes.forEach(function (o) { list.push({ path: o.path }); }); });
+      return list;
     }
-    return ["Collapsing the state…", mem, pool[0], pool[1], "Reading out the measurement…"];
+    return A.noise == null ? [] : S.figPaths(A);
   }
-
-  function startCollapse() {
-    clearTimers();
-    lastResult = S.recommendAll(A);
-    lastFlow = S.flow(A);
-    show("collapse");
-    scrollToEl(views.collapse);
-    big.resize();
-    big.reset();
-    big.spin(0.18);
-    hero.spin(0.07);
-    captionEl.textContent = "Collapsing";
-    var lines = buildLines();
-    var lineEl = $("collapseLine"), fill = $("collapseFill");
-    fill.style.width = "0%";
-    if (reduceMotion) {
-      lineEl.innerHTML = lines[0];
-      fill.style.width = "100%";
-      timers.push(setTimeout(finishCollapse, 700));
+  function updateFigure() {
+    lastPaths = currentPaths();
+    F.mark(flowSvg, lastPaths);
+    placeFigure();
+  }
+  // On wide screens the figure stays in view beside the text for the whole length of the
+  // page and, where the window is lower than the figure, scrolls on its own
+  // (css/style.css), here to the point where the path ends. On narrow screens the figure
+  // follows the text and is panned sideways to that point. After a choice made in the
+  // figure itself (holdFigure), the figure stays where it is.
+  var holdFigure = false;
+  function placeFigure() {
+    var fp = F.focusPoint(lastPaths);
+    if (!wide.matches) {
+      var pans = flowScroll.scrollWidth > flowScroll.clientWidth + 1;
+      $("panHint").hidden = !pans;
+      if (pans && !holdFigure) flowScroll.scrollLeft = (fp ? fp.x : 0.5) * flowScroll.scrollWidth - flowScroll.clientWidth / 2;
       return;
     }
-    var step = 560;
-    lines.forEach(function (text, i) {
-      timers.push(setTimeout(function () {
-        lineEl.innerHTML = text;
-        lineEl.classList.remove("in");
-        void lineEl.offsetWidth;
-        lineEl.classList.add("in");
-        fill.style.width = Math.round(((i + 1) / lines.length) * 100) + "%";
-      }, i * step));
-    });
-    timers.push(setTimeout(function () { big.collapse(); }, (lines.length - 1) * step));
-    timers.push(setTimeout(finishCollapse, lines.length * step + 520));
+    $("panHint").hidden = true;
+    if (holdFigure || colFig.scrollHeight <= colFig.clientHeight + 1) return;
+    var svgBox = flowSvg.getBoundingClientRect();
+    var svgTop = svgBox.top - colFig.getBoundingClientRect().top + colFig.scrollTop;
+    colFig.scrollTop = fp ? Math.max(0, svgTop + fp.y * svgBox.height - colFig.clientHeight / 2) : 0;
   }
+  var placeTimer = null;
+  window.addEventListener("resize", function () { clearTimeout(placeTimer); placeTimer = setTimeout(placeFigure, 60); });
 
-  function finishCollapse() {
-    clearTimers();
-    big.collapse();
-    hero.set(1, true, true);
+  /* ---------- choosing in the figure ---------- */
+  // Each yes, no and box of the figure is a button. Choosing one sets the answers that it
+  // implies (Selector.aim), keeps the others, and shows the result once the query is complete.
+  var picks = Array.prototype.slice.call(flowSvg.querySelectorAll(".pick"));
+  var flowStatus = $("flowStatus");
+  function signature(a) {
+    return JSON.stringify([a.noise || null, a.circuits || [], a.other || null, a.output || null, a.n == null ? null : a.n,
+      S.hwList(a), a.cpuScale || null, a.gpuCount || null, !!a.notClifford, a.nRange || null, a.cpuNodes || null]);
+  }
+  function pickedName(g) {
+    var node = g.getAttribute("data-node");
+    if (node) return F.BOXES[node].b + ", " + strip(F.BOXES[node].text);
+    var e = g.getAttribute("data-edge").split(":");
+    return strip(F.DECISIONS[e[0]].text) + " " + e[1];
+  }
+  function pickInFigure(g) {
+    var node = g.getAttribute("data-node"), edge = String(g.getAttribute("data-edge") || "").split(":");
+    var next = S.aim(A, node ? { box: node } : { d: edge[0], ans: edge[1] });
+    var complete = S.flow(next).done;
+    if (signature(next) === signature(A) && (complete ? !views.result.hidden : views.result.hidden)) {
+      flowStatus.textContent = pickedName(g) + ": the answers already say so.";
+      return;
+    }
+    clearUrl();
+    A = next;
+    review = false; isExample = false; editing = null;
+    holdFigure = true;
+    nDraft = A.n != null ? A.n : A.nRange ? Math.min(A.nRange[1], Math.max(A.nRange[0], 30)) : A.noise === "yes" ? 12 : 30;
+    draft = freshDraft();
+    if (complete) {
+      showResult();
+      flowStatus.textContent = pickedName(g) + ": answers set, result shown.";
+      return;
+    }
+    // Where the figure follows the questions, keep it under the pointer while they change height.
+    var before = flowSvg.getBoundingClientRect().top;
+    renderAsk({ focus: false });
+    var shift = flowSvg.getBoundingClientRect().top - before;
+    if (!wide.matches && Math.abs(shift) > 1) window.scrollBy(0, shift);
+    var f = S.flow(A), waiting = null;
+    for (var i = 0; i < f.qs.length; i++) if (!S.answered(A, f.qs[i])) { waiting = f.qs[i]; break; }
+    flowStatus.textContent = pickedName(g) + ": answers set." + (waiting ? " Next question: " + strip(S.QUESTIONS[waiting].prompt) : "");
+  }
+  flowSvg.addEventListener("click", function (e) {
+    var g = e.target && e.target.closest ? e.target.closest(".pick") : null;
+    if (g && flowSvg.contains(g)) pickInFigure(g);
+  });
+  // One tab stop for the figure: the arrow keys move between its buttons.
+  function roveTo(g) {
+    picks.forEach(function (p) { p.setAttribute("tabindex", p === g ? "0" : "-1"); });
+  }
+  if (picks.length) roveTo(picks[0]);
+  flowSvg.addEventListener("focusin", function (e) {
+    var g = e.target && e.target.closest ? e.target.closest(".pick") : null;
+    if (g) roveTo(g);
+  });
+  flowSvg.addEventListener("keydown", function (e) {
+    var g = e.target && e.target.closest ? e.target.closest(".pick") : null;
+    if (!g) return;
+    var i = picks.indexOf(g), to = null;
+    if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") { e.preventDefault(); pickInFigure(g); return; }
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") to = picks[(i + 1) % picks.length];
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") to = picks[(i - 1 + picks.length) % picks.length];
+    else if (e.key === "Home") to = picks[0];
+    else if (e.key === "End") to = picks[picks.length - 1];
+    if (to) { e.preventDefault(); roveTo(to); to.focus(); }
+  });
+
+  /* ---------- result ---------- */
+  function showResult() {
+    lastResult = S.recommendAll(A);
+    lastFlow = S.flow(A);
     renderResults(lastResult, lastFlow);
     show("result");
-    scrollToEl(views.result);
+    updateFigure();
+    var top = views.result.getBoundingClientRect().top;
+    if (top < 0 || top > window.innerHeight * 0.6) scrollToEl(views.result);
     $("rHeading").focus({ preventScroll: true });
   }
 
-  /* ---------- readout ---------- */
+  /* ---------- parts of the result ---------- */
   function meter(kind, n, refLabel) {
     var box = el("div");
     var k = kind === "dm" ? "dm" : "sv";
@@ -899,14 +951,14 @@
     list.forEach(function (p) {
       var ok = n <= p.n;
       var li = el("li", ok ? "yes" : "no");
-      li.appendChild(el("span", "mk", ok ? "✓" : "×"));
+      li.appendChild(el("span", "mk", ok ? "✓" : "✗"));
       var txt = el("span", "fit-text");
       txt.appendChild(el("span", "fit-name", p.label));
       var status;
-      if (p.measured == null) status = el("span", "fit-status none", "No measurement in the thesis");
+      if (p.measured == null) status = el("span", "fit-status none", "No measurement in the dissertation");
       else if (p.measured >= p.n) status = el("span", "fit-status full", "Measured up to <i>n</i> = " + p.measured);
       else status = el("span", "fit-status part", "Measured up to <i>n</i> = " + p.measured + "; capacity beyond");
-      if (p.measured != null && n > p.measured && n <= p.n) status.innerHTML += " · your size beyond the measurements";
+      if (p.measured != null && n > p.measured && n <= p.n) status.innerHTML += "; your size lies beyond the measurements";
       txt.appendChild(status);
       li.appendChild(txt);
       li.appendChild(el("span", "cap-n", "holds <i>n</i> ≤ " + p.n));
@@ -917,21 +969,9 @@
     return box;
   }
 
-  function pathList(qs) {
-    var ol = el("ol", "path");
-    qs.forEach(function (id) {
-      if (!S.answered(A, id)) return;
-      var li = el("li");
-      li.appendChild(el("span", "pg", S.QUESTIONS[id].gate));
-      li.appendChild(el("span", "", "<span class=\"pq\">" + S.QUESTIONS[id].short + " → </span><span class=\"pa\">" + answerLabel(id) + "</span>"));
-      ol.appendChild(li);
-    });
-    return ol;
-  }
-
   // Backend name as a link to its source repository; opens in a new tab.
-  function repoLink(name, withMark) {
-    var a = el("a", "repo", esc(name) + (withMark ? "<span class=\"repo-mark\" aria-hidden=\"true\">GitHub ↗</span>" : ""));
+  function repoLink(name) {
+    var a = el("a", "repo", esc(name));
     a.href = S.REPOS[name];
     a.target = "_blank";
     a.rel = "noopener noreferrer";
@@ -944,7 +984,7 @@
     Array.prototype.slice.call(p.querySelectorAll("b")).forEach(function (b) {
       var name = b.textContent;
       if (!S.REPOS[name]) return;
-      var a = repoLink(name, false);
+      var a = repoLink(name);
       a.classList.add("inline");
       b.textContent = "";
       b.appendChild(a);
@@ -952,60 +992,89 @@
     return p;
   }
 
-  function runConfigView(rec, block) {
-    var cfg = RC.forOutcome(rec, {
-      n: A.n, cls: block && block.cls ? block.cls : "dense",
+  // How the dissertation ran the backend of this outcome, for the circuits and the size of
+  // the query, and where the library documents those settings (js/runconfig.js).
+  function runConfigOf(rec, block) {
+    return RC.forOutcome(rec, {
+      n: A.n,
       output: A.output === "tableau" && block && block.cls !== "clifford" ? "state" : A.output,
-      fromFile: !!(block && block.circuits.some(function (c) { return c.conf === "file"; }))
+      circuits: block ? block.circuits : [],
+      noisy: A.noise === "yes"
     });
+  }
+  function runConfigView(rec, block) {
+    var cfg = runConfigOf(rec, block);
     if (!cfg) return null;
     var det = el("details", "runcfg");
-    det.appendChild(el("summary", "", "<span class=\"ev-h\">Run configuration</span><span class=\"ev-refs\">" + esc(cfg.file) + " · template</span>"));
+    det.appendChild(el("summary", "", "<span class=\"ev-h\">Run configuration</span> <span class=\"ev-refs\">as run in the dissertation</span>"));
     var body = el("div", "rc-body");
-    body.appendChild(el("p", "rc-note", "A starting point set up as the dissertation ran this backend, with an example circuit of this structure class to replace with yours. Other versions or sites may need other options."));
-    var bar = el("div", "rc-bar");
-    var copy = el("button", "btn ghost small", "Copy code");
-    copy.type = "button";
-    var st = el("span", "status-msg");
-    st.setAttribute("role", "status");
-    bar.appendChild(copy); bar.appendChild(st);
-    body.appendChild(bar);
-    var holder = el("div");
-    body.appendChild(holder);
-    var pre = el("pre", "code");
-    var code = el("code", "lang-" + cfg.lang);
-    code.textContent = cfg.text;
-    pre.appendChild(code);
-    pre.tabIndex = 0;
-    pre.setAttribute("aria-label", "Template " + cfg.file);
-    body.appendChild(pre);
-    copy.addEventListener("click", function () { copyText(cfg.text, st, holder, "Template to copy"); });
+    body.appendChild(el("p", "rc-note", "How the dissertation ran this backend in this regime, written for the circuits and the size of your query, with tips where good practice goes beyond those runs. The calls that set it up are in the documentation of the library, at the pages listed below."));
+    var dl = el("dl", "rc");
+    cfg.rows.forEach(function (r) {
+      dl.appendChild(el("dt", "", r[0]));
+      dl.appendChild(el("dd", "", r[1]));
+    });
+    body.appendChild(dl);
+    body.appendChild(el("p", "rc-docs-h", "In the documentation of " + esc(cfg.lib)));
+    var ul = el("ul", "rc-docs");
+    cfg.docs.forEach(function (d) {
+      var li = el("li");
+      var a = el("a", "", esc(d.t));
+      a.href = d.url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.setAttribute("aria-label", cfg.lib + " documentation, " + d.t + " (opens in a new tab)");
+      li.appendChild(a);
+      li.appendChild(el("span", "d", ": " + d.d));
+      ul.appendChild(li);
+    });
+    body.appendChild(ul);
+    body.appendChild(el("p", "rc-foot", cfg.foot));
     det.appendChild(body);
     return det;
   }
 
+  // One outcome: the method and the backend, as the two levels of the framework give them,
+  // the reason, and the path, measurements, run configuration and conditions behind it.
   function outcomeView(o, bigView, block) {
     var r = o.rec;
-    var wrap = el("div", "outcome-block" + (bigView ? " big" : ""));
-    var head = el("div", "outcome");
-    var sw = el("span", "swatch");
-    var colour = S.COLOURS[r.b] || "#86d4f0";
-    sw.style.background = colour;
-    sw.style.setProperty("--swatch-glow", colour);
-    if (!reduceMotion) sw.appendChild(el("span", "ring"));
-    head.appendChild(sw);
-    var nameBox = el("div", "oname");
-    if (o.hw) nameBox.appendChild(el("span", "hwtag", "On " + HW_NAME[o.hw]));
-    var title = el(bigView ? "h3" : "h4", "outcome-name");
-    title.appendChild(S.REPOS[r.b] ? repoLink(r.b, true) : document.createTextNode(r.b));
-    nameBox.appendChild(title);
-    head.appendChild(nameBox);
-    wrap.appendChild(head);
-    wrap.appendChild(el("p", "regime", r.regime + (r.kind === "sv" && r.b.indexOf("No feasible") !== 0 && r.b.indexOf("Beyond") !== 0 ? " · double precision" : "")));
-    if (r.out) wrap.appendChild(el("p", "outnote", r.out));
+    var wrap = el("div", "outcome-block");
+    if (o.hw && S.hwList(A).length === 2) wrap.appendChild(el("p", "hwtag", "On " + HW_NAME[o.hw]));
+    var parts = String(r.regime).split(" · ");
+    var outside = r.b.indexOf("No feasible") === 0 || r.b.indexOf("Beyond") === 0 || r.b === "Trajectory sampling";
+    var box = el("div", "obox" + (r.out ? " out" : ""));
+    box.style.setProperty("--c", S.colourOf(r.b));
+    box.style.setProperty("--t", S.tintOf(r.b));
+    var title = el(bigView ? "h3" : "h4", "bname");
+    title.appendChild(S.REPOS[r.b] ? repoLink(r.b) : document.createTextNode(r.b));
+    box.appendChild(title);
+    if (outside) {
+      box.appendChild(el("span", "btext", lc(parts.join(", "))));
+      wrap.appendChild(el("div", "sel-out")).appendChild(box);
+    } else {
+      if (parts.length > 1) box.appendChild(el("span", "btext", parts.slice(1).join(", ")));
+      var dl = el("dl", "sel");
+      dl.appendChild(el("dt", "", "Method"));
+      dl.appendChild(el("dd", "", parts[0] + (r.kind === "sv" ? ", in double precision" : "")));
+      dl.appendChild(el("dt", "", "Backend"));
+      dl.appendChild(el("dd")).appendChild(box);
+      wrap.appendChild(dl);
+    }
+    if (r.out) wrap.appendChild(el("p", "outnote", (outside ? "" : "<b>Beyond the measured range.</b> ") + r.out));
     wrap.appendChild(el("p", "ev", r.ev));
+    var fb = o.path && o.path.end ? F.BOXES[o.path.end] : null;
+    if (fb && !outside && fb.b !== r.b && !(fb.also && fb.also.indexOf(r.b) !== -1)) {
+      wrap.appendChild(el("p", "fignote", "<b>Finer than Figure 5.13.</b> The figure summarises this regime with the box " + fb.b + " (" + fb.text + "); at this size and on this circuit the measurements give " + r.b + "."));
+    }
     if (r.alt) wrap.appendChild(linkNames(el("p", "alt", "Also consider " + r.alt + ".")));
     if (r.note) wrap.appendChild(el("p", "alt", r.note));
+    if (o.path) {
+      var pd = el("details", "pathd");
+      pd.open = !wide.matches;
+      pd.appendChild(el("summary", "", "<span class=\"ev-h\">Path through Figure 5.13</span>"));
+      pd.appendChild(F.pathList(o.path));
+      wrap.appendChild(pd);
+    }
     var model = E.model(r, { n: A.n, A: A });
     if (model) {
       o.model = model;
@@ -1026,11 +1095,11 @@
   }
 
   function workloadLine() {
-    if (A.noise === "yes") return "Exact noisy evolution · " + A.n + " qubits";
+    if (A.noise === "yes") return "Exact noisy evolution on " + A.n + " qubits";
     var names = circuitNames();
     var what = names.length <= 2 ? names.join(" and ") : names.length + " circuits";
-    var out = { samples: "samples", state: "full state", tableau: "tableau" }[A.output] || "";
-    return what + " · " + A.n + " qubits · " + out;
+    var out = { samples: "returning measurement samples", state: "returning the full state", tableau: "returning the stabiliser tableau" }[A.output] || "";
+    return what + " on " + A.n + " qubits, " + out;
   }
 
   function outsideView(res) {
@@ -1058,17 +1127,15 @@
     var anyOut = outs.some(function (o) { return o.rec.out; });
     var anyUnsure = res.blocks.some(function (b) { return b.unsure.length; });
 
-    $("rEyebrow").textContent = single ? "Measurement outcome" : outs.length + " measurement outcomes";
-    var names = [];
-    outs.forEach(function (o) { if (names.indexOf(o.rec.b) === -1) names.push(o.rec.b); });
-    $("rHeading").textContent = names.join(" · ");
-    $("rSub").innerHTML = workloadLine() + (single ? "" : "<br><span class=\"r-sub-note\">One outcome per structure class" + (S.hwList(A).length === 2 ? " and hardware" : "") + "</span>");
-
-    var flags = $("rFlags");
-    flags.innerHTML = "";
-    if (isExample) flags.appendChild(el("span", "flag ex", "Example query"));
-    if (anyUnsure) flags.appendChild(el("span", "flag unsure", "Partly inconclusive"));
-    flags.appendChild(el("span", "flag " + (anyOut ? "out" : "in"), anyOut ? "Beyond measured range" : "Within measured range"));
+    outs.forEach(function (o) { if (o.path) o.path.out = !!o.rec.out; });
+    var noneMeasured = outs.every(function (o) { return o.rec.evk && o.rec.evk.type === "none"; });
+    $("rHeading").textContent = noneMeasured ? "Outside the measured configurations" : single ? "Recommended configuration" : "Recommended configurations";
+    $("rSub").innerHTML = workloadLine() + "." + (single ? "" : " One configuration for each circuit structure" + (S.hwList(A).length === 2 ? " and each kind of hardware" : "") + ".");
+    var remarks = [];
+    if (isExample) remarks.push("This is an example query.");
+    remarks.push(noneMeasured ? "No configuration of the dissertation covers this query." : anyOut ? "Part of the answer lies beyond the measured range and is marked with a dashed outline." : "The answer lies within the measured range.");
+    if (anyUnsure) remarks.push("Some circuits are outside the benchmark set, so their placement is inconclusive.");
+    $("rFlags").textContent = remarks.join(" ");
 
     var cont = $("outcomes");
     cont.innerHTML = "";
@@ -1077,9 +1144,10 @@
       if (b.cls) {
         var bh = el("div", "block-h");
         bh.appendChild(el("p", "block-cls", S.CLASSES[b.cls].name));
-        var badges = el("div", "cbadges");
-        b.circuits.forEach(function (c) {
-          var s = el("span", "cbadge conf-" + c.conf, esc(c.name));
+        var badges = el("p", "cbadges");
+        b.circuits.forEach(function (c, i) {
+          if (i) badges.appendChild(document.createTextNode(", "));
+          var s = el("span", "cbadge conf-" + c.conf, esc(c.name) + (c.conf === "measured" ? "" : " (" + lc(S.CONFIDENCE[c.conf].label) + ")"));
           s.title = S.CONFIDENCE[c.conf].label + ": " + c.note;
           badges.appendChild(s);
         });
@@ -1093,7 +1161,7 @@
           card.appendChild(el("p", "incon",
             "<b>" + (fromFile ? "Classified from your file" : "Inconclusive") + " for " + list + ".</b> " + (plural ? "These circuits are" : "This circuit is") +
             " outside the benchmark set and " + (fromFile ? "placed in this class by the analysis of its gates" : "mapped to this class by structure") + ", so " +
-            (all ? "the outcome is a best guess." : "the outcome is measured for the other circuits and only expected for " + (plural ? "these." : "this one."))));
+            (all ? "the recommendation is a best guess." : "the recommendation is measured for the other circuits and only expected for " + (plural ? "these." : "this one."))));
         }
       }
       var outsEl = el("div", "block-outs" + (b.outcomes.length > 1 ? " pair" : ""));
@@ -1104,32 +1172,37 @@
 
     var refOnly = res.blocks.every(function (b) { return b.outcomes.every(function (o) { return o.rec.kind === "sv-ref"; }); });
     var mem = $("memory"); mem.innerHTML = ""; mem.appendChild(meter(res.kind, A.n, refOnly));
-    var path = $("path"); path.innerHTML = ""; path.appendChild(pathList(f.qs));
     var outside = $("outside"); outside.innerHTML = ""; outside.appendChild(outsideView(res));
     $("copyStatus").textContent = "";
     $("copyFallback").innerHTML = "";
-    captionEl.textContent = single ? "Collapsed onto " + outs[0].rec.b : "Collapsed onto " + outs.length + " outcomes";
     primeTools();
   }
 
   function summaryText(res, qs) {
-    var lines = ["Quantum Simulator Selector (prototype)", shareUrl(), ""];
+    var lines = ["Quantum Simulator Selector, a prototype of the two-level selection framework (Section 5.8)", shareUrl(), ""];
     qs.forEach(function (id) { if (S.answered(A, id)) lines.push(S.QUESTIONS[id].short + ": " + strip(answerLabel(id))); });
     res.blocks.forEach(function (b) {
       lines.push("");
       if (b.cls) lines.push("== " + S.CLASSES[b.cls].name + ": " + b.circuits.map(function (c) { return c.name + " (" + S.CONFIDENCE[c.conf].label + ")"; }).join(", "));
       b.outcomes.forEach(function (o) {
         var r = o.rec;
-        lines.push((o.hw ? "On " + HW_NAME[o.hw] + ": " : "") + r.b + " · " + strip(r.regime));
+        lines.push((o.hw ? "On " + HW_NAME[o.hw] + ": " : "") + r.b + ", " + lc(strip(r.regime).replace(/ · /g, ", ")));
+        if (o.path) lines.push("Path in Figure 5.13: " + F.pathText(o.path));
         lines.push(strip(r.ev));
         if (r.alt) lines.push("Also consider " + strip(r.alt) + ".");
         if (r.note) lines.push(strip(r.note));
         if (r.out) lines.push("Range: " + strip(r.out));
         (r.caveats || []).forEach(function (c) { lines.push("- " + strip(c)); });
         E.lines(o.model || E.model(r, { n: A.n, A: A })).forEach(function (l) { lines.push(strip(l)); });
+        var cfg = runConfigOf(r, b);
+        if (cfg) {
+          lines.push("Run configuration, as run in the dissertation:");
+          cfg.rows.forEach(function (row) { lines.push("  " + row[0] + ": " + strip(row[1].replace(/<br>|<\/span>/g, " ")).trim()); });
+          cfg.docs.forEach(function (d) { lines.push("  Documentation of " + cfg.lib + ", " + d.t + ": " + d.url); });
+        }
       });
     });
-    lines.push("", "Fastest configurations measured on Deucalion and an i9-13900KS workstation, double precision.");
+    lines.push("", "Fastest configurations measured on Deucalion and on the i9-13900KS platform, in double precision.");
     return lines.join("\n");
   }
 
@@ -1159,12 +1232,11 @@
   /* ---------- wiring ---------- */
   $("exampleBtn").addEventListener("click", showExample);
   restartBtn.addEventListener("click", reset);
-  $("measureBtn").addEventListener("click", function () { if (S.flow(A).done) startCollapse(); });
-  $("skipBtn").addEventListener("click", finishCollapse);
+  $("showBtn").addEventListener("click", function () { if (S.flow(A).done) showResult(); });
   $("changeBtn").addEventListener("click", function () {
     clearUrl();
+    holdFigure = false;
     review = true; editing = null; isExample = false;
-    hero.set(0.9, false, false);
     renderAsk({ focus: false });
     scrollToEl(views.ask);
   });
@@ -1178,9 +1250,9 @@
     A = shared;
     lastResult = S.recommendAll(A);
     lastFlow = S.flow(A);
-    hero.set(1, true, false);
     renderResults(lastResult, lastFlow);
     show("result");
+    updateFigure();
   } else {
     // An incomplete or malformed link is ignored, so the questionnaire always starts empty.
     clearUrl();

@@ -30,19 +30,19 @@
     "sweep|node|qft|Qiskit Aer": "Leads from " + N + " = 18. Fusion cuts the operation count thirteenfold at " + N + " = 26, and at " + N + " = 30 it runs about 60 times faster than on one thread.",
     "sweep|node|hea|Qiskit Aer": "Leads from " + N + " = 22 and runs about 65 times faster than on one thread at " + N + " = 30.",
     "sweep|node|clifford|Qiskit Aer": "Leads from " + N + " = 26 and runs almost 100 times faster than on one thread at " + N + " = 30.",
-    "sweep|node|Qulacs": "Second on every circuit at " + N + " = 30. On the 30-qubit QFT it stops gaining at 16 threads, consistent with the memory-bandwidth limit (Section 5.2).",
-    "sweep|node|clifford|Qulacs": "Second at " + N + " = 30. Up to " + N + " = 13 it runs up to thirty-five times slower than on one thread, as dividing small updates among threads costs more than it saves.",
+    "sweep|node|Qulacs": "Second on the QFT and the HEA at the largest sizes. On the 30-qubit QFT it stops gaining at 16 threads, consistent with a memory-bandwidth limit (Section 5.2).",
+    "sweep|node|clifford|Qulacs": "Behind QuEST at " + N + " = 28, the largest size both reached. Up to " + N + " = 13 it runs up to thirty-five times slower than on one thread, as the overhead of dividing these small state updates among threads outweighs the work saved.",
     "sweep|node|qft|QuEST": "Applies one unfused gate per pass over the state.",
     "sweep|node|hea|QuEST": "Its speedup over one thread reaches at most about 13 at " + N + " = 28.",
-    "sweep|node|clifford|QuEST": "Fastest on this circuit through " + N + " = 25; its speedup over one thread reaches at most about 13 at " + N + " = 28.",
+    "sweep|node|clifford|QuEST": "Fastest on this circuit up to " + N + " = 25 and second at " + N + " = 28, where its speedup over one thread reaches at most about 13.",
     "sweep|node|qibojit": "The slowest of the four backends at the largest sizes.",
-    "sweep|gpu|Qulacs": "Lowest fixed costs, 13 to 20 µs per gate between " + N + " = 12 and 18, and leads every circuit through " + N + " = 23. Its timed call excludes any copy to host memory.",
-    "sweep|gpu|QuEST": "Second fastest up to " + N + " = 16, at 22 to 30 µs per gate, then a six- to sevenfold step at " + N + " = 17 from temporary device allocations around each gate. Its timed call excludes the copy to host memory.",
+    "sweep|gpu|Qulacs": "Lowest fixed costs, 13 to 20 µs per gate between " + N + " = 12 and 18, and leads every circuit up to " + N + " = 23. Its timed call excludes any copy to host memory.",
+    "sweep|gpu|QuEST": "Second fastest up to " + N + " = 16, at 22 to 30 µs per gate. Between " + N + " = 16 and 17 its time rises six- to sevenfold, a step consistent with the temporary device array that it allocates before each non-diagonal gate, once the state reaches 2 MiB. Its timed call excludes the copy to host memory.",
     "sweep|gpu|qft|Qiskit Aer": "Leads the QFT from " + N + " = 24 to 30 although its time includes the copy to host memory, consistent with its fusion of controlled rotations into diagonal operations.",
     "sweep|gpu|hea|Qiskit Aer": "Processes the whole circuit in one call with fusion; its time includes the copy to host memory.",
-    "sweep|gpu|clifford|Qiskit Aer": "The slowest of the five on this circuit through " + N + " = 27; its time includes the copy to host memory.",
+    "sweep|gpu|clifford|Qiskit Aer": "The slowest of the five on this circuit at every size up to " + N + " = 30, although from " + N + " = 27 QuEST takes almost as long. Its time includes the copy to host memory.",
     "sweep|gpu|qft|CUDA-Q": "One call per circuit with fusion and just-in-time compilation, 1.1 to 1.7 times behind Qiskit Aer from " + N + " = 24 to 30. Its time includes the copy to host memory.",
-    "sweep|gpu|CUDA-Q": "One call per circuit with fusion and just-in-time compilation, the fastest on this circuit at the larger sizes. Its time includes the copy to host memory.",
+    "sweep|gpu|CUDA-Q": "One call per circuit with fusion and just-in-time compilation, the fastest on this circuit from " + N + " = 25. Its time includes the copy to host memory.",
     "sweep|gpu|qibojit": "GPU kernels through CuPy at 0.1 to 0.4 ms per gate between " + N + " = 12 and 18. Its timed call excludes the copy to host memory.",
     // multi-node CPU, Table 5.3 and Figure 5.4
     "strong|Qiskit Aer": "128 ranks per node, one per core. The fastest from one to 16 nodes, 3.7 to 6.3 times ahead of mpiQulacs.",
@@ -54,26 +54,26 @@
     "weak|Qiskit Aer": "128 ranks per node. The fastest at every step it covers, up to 16 nodes and " + N + " = 32, with a lead that narrows as nodes are added.",
     "weak|Qiskit Aer, one rank per node": "One busy core per node.",
     // multi-GPU, Figures 5.6 and 5.7
-    "mgpu|CUDA-Q": "cuStateVec kernels, 3.5 to 4 times faster than Qiskit Aer on four GPUs. Crossing to a second node slows it about eightfold from " + N + " = 32.",
-    "mgpu|Qiskit Aer": "Exchanges over the CUDA IPC transport inside a node. From eight to sixteen GPUs it about halves its time, and it leads on sixteen.",
+    "mgpu|CUDA-Q": "Updates the state through cuStateVec and leads Qiskit Aer by 3.6 to 4.2 times on four GPUs from " + N + " = 32 to 34. Crossing to a second node slows it about eight times at each of those sizes.",
+    "mgpu|Qiskit Aer": "Exchanges through the CUDA IPC transport of UCX inside a node. From eight to sixteen GPUs it approximately halves its runtime, and it leads on sixteen.",
     "mgpu|QuEST": "Gains the most within a node but stays the slowest at every GPU count, and holds at most 31 qubits of the state per GPU in distributed runs.",
     "gpunode|CUDA-Q": "Dividing the state shortens the run more as the state grows; four GPUs cut the HEA time at " + N + " = 32 by over two-thirds (Table 5.5).",
     // density matrix, Figure 5.9
     "dm|Qiskit Aer": "Stays closest to the fourfold growth per qubit and is about twenty-five times faster than the other two at " + N + " = 13.",
-    "dm|Qibo NumPy": "About twenty to fifty times faster at " + N + " = 3, then grows faster than fourfold per qubit. It applies the same channel as Qiskit Aer.",
-    "dm|Qulacs": "Sets noise as a Pauli-error probability, 4/3 stronger per qubit at the same p and applied only to the CNOT target, so its fidelity sits slightly below the other two.",
+    "dm|Qibo NumPy": "Starts twenty to fifty times faster, but its runtime grows with the matrix from " + N + " = 3 and more steeply than fourfold per qubit. It applies the same noise channel to the same gates as Qiskit Aer.",
+    "dm|Qulacs": "Its parameter is the probability of a Pauli error, a channel stronger by a factor of 4/3 on a single qubit at the same p, and on each CNOT it is applied only to the target, so its fidelity sits just slightly below the other two.",
     // stabiliser, Figure 5.11
     "stab|Qiskit Aer Stabilizer": "Stays below 0.1 s through " + N + " = 60 on one x86 thread and returns samples.",
     "stab|Qibo Clifford": "Stays below 0.1 s through " + N + " = 60 and builds the tableau without sampling.",
     "stab|CUDA-Q Stim": "Exceeds 0.1 s from " + N + " = 51, since it pays the dispatch and just-in-time compilation of the framework in every repetition.",
     "stab|State vector": "Doubles with every qubit; a 60-qubit state would need 16 EiB.",
     // tensor network, Figure 5.12
-    "tn|CUDA-Q · GHZ": "Schmidt rank at most two across any cut of the chain. Every size up to " + N + " = 500 completed, about an hour at " + N + " = 500.",
-    "tn|CUDA-Q · HEA, one layer": "Schmidt rank at most two across any cut of the chain. Every size up to " + N + " = 500 completed.",
-    "tn|CUDA-Q · HEA, twenty layers": "Each added layer raises the rank the contraction carries, and the time limit is reached after " + N + " = 36.",
-    "tn|CUDA-Q · QFT": "Slower than the state vector at every size, completed up to " + N + " = 24.",
-    "tn|Qibo · HEA, one layer": "Contracts into the full state, faster than CUDA-Q at the sizes both reached, and stops at " + N + " = 28 on GPU memory.",
-    "tn|Qibo · QFT": "Contracts into the full state and stops at " + N + " = 28 on GPU memory.",
+    "tn|CUDA-Q · GHZ": "Schmidt rank two across any cut. Completed runs at every tested size up to " + N + " = 500, where the runtime reaches about an hour.",
+    "tn|CUDA-Q · HEA, one layer": "A single ring keeps the Schmidt rank at most four across each cut of the qubit chain. Completed runs at every tested size up to " + N + " = 500.",
+    "tn|CUDA-Q · HEA, twenty layers": "Additional layers can increase the bond dimensions needed, and " + N + " = 36 is the largest size with a completed repetition.",
+    "tn|CUDA-Q · QFT": "Slower than the faster state-vector reference at every measured size; completed up to " + N + " = 24, and every repetition at " + N + " = 26 exceeded the time limit.",
+    "tn|Qibo · HEA, one layer": "Returns the full state, faster than CUDA-Q at all shared sizes, with its last completed runs at " + N + " = 28.",
+    "tn|Qibo · QFT": "Returns the full state; its last completed runs are at " + N + " = 28, and at " + N + " = 30 the intermediate tensors exceed GPU memory.",
     "tn|Qulacs state vector · QFT": "State-vector reference on one A100-40 (Section 5.1).",
     "tn|Qiskit Aer state vector · QFT": "State-vector reference on one A100-40, with the copy to host memory (Section 5.1)."
   };
@@ -115,10 +115,35 @@
   }
 
   var DASHES = ["", "6 4", "2 4", "9 4 2 4", "1 3"];
-  function colourOf(name) {
-    if (S.COLOURS[name]) return S.COLOURS[name];
-    var base = name.split(" · ")[0].split(",")[0];
-    return S.COLOURS[base] || "#86d4f0";
+  // Colour, marker and line of each series, as in the figures of Chapter 5. The
+  // tensor-network series follow the legend of Figure 5.12.
+  var TN_STYLE = {
+    "CUDA-Q · GHZ": { colour: "#009988", marker: "tri", label: "CUDA-Q TN, GHZ" },
+    "CUDA-Q · HEA, one layer": { colour: "#0077BB", marker: "tri", label: "CUDA-Q TN, HEA L = 1" },
+    "CUDA-Q · HEA, twenty layers": { colour: "#AA3377", marker: "tri", label: "CUDA-Q TN, HEA L = 20" },
+    "CUDA-Q · QFT": { colour: "#DDAA33", marker: "tri", label: "CUDA-Q TN, QFT" },
+    "Qibo · HEA, one layer": { colour: "#33BBEE", marker: "plus", label: "Qibo cuTN, HEA L = 1" },
+    "Qibo · QFT": { colour: "#555555", marker: "plus", label: "Qibo cuTN, QFT" },
+    "Qulacs state vector · QFT": { colour: "#EE7733", marker: "diamond", dash: DASHES[1], label: "Qulacs SV, QFT" },
+    "Qiskit Aer state vector · QFT": { colour: "#CC3311", marker: "circle", dash: DASHES[2], label: "Qiskit Aer SV, QFT" }
+  };
+  var MARKERS = { "Qulacs": "diamond", "mpiQulacs": "diamond", "Qiskit Aer": "circle", "QuEST": "square", "CUDA-Q": "tri", "Qibo": "plus", "Qibo NumPy": "plus", "qibojit": "cross" };
+  function baseName(name) { return name.split(" · ")[0].split(",")[0]; }
+  function styleOf(name) {
+    if (TN_STYLE[name]) return TN_STYLE[name];
+    var base = baseName(name);
+    return {
+      colour: S.COLOURS[name] || S.COLOURS[base] || "#595959",
+      marker: MARKERS[name] || MARKERS[base] || "circle",
+      label: name.replace(/ · /g, ", ")
+    };
+  }
+  function colourOf(name) { return styleOf(name).colour; }
+  function labelOf(name) { return styleOf(name).label; }
+  // One plotted series; opts: emph, dash, label.
+  function serie(name, points, opts) {
+    var st = styleOf(name), o = opts || {};
+    return { name: o.label || st.label, colour: st.colour, marker: st.marker, dash: o.dash !== undefined ? o.dash : (st.dash || ""), points: points, emph: !!o.emph };
   }
 
   /* ---------- models per evidence type ---------- */
@@ -158,21 +183,19 @@
       return { b: b, t: v.t, kind: v.kind, note: note || v.note, excluded: S.excluded(reg, note), obs: obs("sweep", reg, c, b), v: v };
     });
     var foot = ["Times as plotted in Figure 5.1" + S.PANEL[reg][c] + ", the fastest repetition at each size."];
-    if (reg === "gpu") foot.push("The times of Qiskit Aer and CUDA-Q include the copy of the state to host memory; those of Qulacs, qibojit and QuEST do not (Table 4.4).");
+    if (reg === "gpu") foot.push("The times of Qiskit Aer and CUDA-Q include the copy of the state to host memory; those of Qulacs, qibojit and QuEST do not (Section 4.4.1).");
     if (nUse !== ctx.n) foot.push("Your size lies below the smallest size measured, so the ranking shows " + N + " = " + nUse + ".");
     if (entries.some(function (e) { return e.kind === "estimate"; })) foot.push("≈ marks an estimate beyond the sweep, which ends at " + N + " = " + end + ", assuming the time at least doubles with each added qubit.");
     if (entries.some(function (e) { return e.kind === "interp"; })) foot.push("~ marks a value interpolated between the neighbouring measured sizes.");
     return {
-      title: "Measured " + WHERE_SHORT[reg] + " · " + S.CIRCUIT_NAME[c],
+      title: S.CIRCUIT_NAME[c] + " " + WHERE_SHORT[reg],
       refs: ["Figure 5.1" + S.PANEL[reg][c], "Section 5.1"],
       at: N + " = " + nUse,
       rows: rowsFrom(entries, rec.b),
       foot: foot,
       chart: {
-        xName: "n", xLabel: "Qubits n", xScale: "lin",
-        series: names.map(function (b) {
-          return { name: b, colour: colourOf(b), points: series[b], emph: b === rec.b };
-        }),
+        xName: "n", xLabel: "Number of qubits", yLabel: "Simulation time (s)", xScale: "lin",
+        series: names.map(function (b) { return serie(b, series[b], { emph: b === rec.b }); }),
         marker: { x: Math.min(Math.max(ctx.n, S.SWEEP_MIN), cap), label: "n = " + ctx.n },
         extensions: entries.filter(function (e) { return e.kind === "estimate"; }).map(function (e) {
           return { colour: colourOf(e.b), from: e.v.from, to: [nUse, e.t] };
@@ -180,7 +203,7 @@
       }
     };
   }
-  var WHERE_SHORT = { thread: "on one x86 thread", node: "on one x86 node, 128 threads", gpu: "on one A100-40" };
+  var WHERE_SHORT = { thread: "on one x86 thread", node: "on one x86 node with 128 threads", gpu: "on one A100-40" };
 
   function strongModel(rec, ctx) {
     var nodes = rec.evk.nodes;
@@ -194,15 +217,15 @@
     var foot = ["QFT at " + N + " = 30 on Deucalion x86 nodes, the fastest of all repetitions across all jobs (Table 5.3)."];
     if (ctx.n !== 30) foot.push("Strong scaling was measured at " + N + " = 30; your query has " + N + " = " + ctx.n + ".");
     return {
-      title: "QFT strong scaling at n = 30 · " + nodes + " nodes",
+      title: "Strong scaling",
       refs: ["Table 5.3", "Figure 5.3", "Section 5.3"],
       at: nodes + " nodes",
       rows: rowsFrom(entries, rec.b),
       foot: foot,
       chart: {
-        xName: "nodes", xLabel: "x86 nodes", xScale: "log2", xTicks: [1, 2, 4, 8, 16, 32, 64],
-        series: Object.keys(ser).map(function (b, i) {
-          return { name: b, colour: colourOf(b), points: objToPoints(ser[b]), emph: b === rec.b, dash: b.indexOf("one rank") !== -1 ? DASHES[1] : "" };
+        xName: "nodes", xLabel: "Nodes", yLabel: "Time (s)", xScale: "log2", xTicks: [1, 2, 4, 8, 16, 32, 64],
+        series: Object.keys(ser).map(function (b) {
+          return serie(b, objToPoints(ser[b]), { emph: b === rec.b, dash: b.indexOf("one rank") !== -1 ? DASHES[1] : "" });
         }),
         marker: { x: nodes, label: nodes + " nodes" }
       }
@@ -224,15 +247,15 @@
     var foot = ["QFT with 28 qubits per node, from " + N + " = 28 on one node to " + N + " = 34 on 64 nodes, values read from Figure 5.4."];
     if (extra > 0) foot.push("≈ marks an estimate for " + N + " = " + ctx.n + " on the same 64 nodes, doubling the time for each added qubit, since each node then holds twice the state.");
     return {
-      title: "QFT weak scaling · " + nodes + " nodes, n = " + nAt,
+      title: "Weak scaling",
       refs: ["Figure 5.4", "Section 5.3"],
       at: nodes + " nodes, " + N + " = " + (extra > 0 ? ctx.n : nAt),
       rows: rowsFrom(entries, rec.b),
       foot: foot,
       chart: {
-        xName: "nodes", xLabel: "x86 nodes (n = 28 + log₂ nodes)", xScale: "log2", xTicks: [1, 2, 4, 8, 16, 32, 64],
+        xName: "nodes", xLabel: "Nodes (n = 28 + log₂ nodes)", yLabel: "Time (s)", xScale: "log2", xTicks: [1, 2, 4, 8, 16, 32, 64],
         series: Object.keys(ser).map(function (b) {
-          return { name: b, colour: colourOf(b), points: objToPoints(ser[b]), emph: b === rec.b, dash: b.indexOf("one rank") !== -1 ? DASHES[1] : "" };
+          return serie(b, objToPoints(ser[b]), { emph: b === rec.b, dash: b.indexOf("one rank") !== -1 ? DASHES[1] : "" });
         }),
         marker: { x: nodes, label: nodes + " nodes" },
         hline: { y: D.weak.noMpiRef, label: "Qiskit Aer, one node without MPI" }
@@ -287,22 +310,21 @@
     if (m === 36) foot.push("≈ marks an estimate for " + N + " = 36 from the " + N + " = 35 run, at least doubling with the added qubit.");
     var counts = [1, 2, 4, 8, 16];
     return {
-      title: "Multi-GPU QFT · n = " + m + " · " + gpus + " GPU" + (gpus > 1 ? "s" : ""),
+      title: "Multi-GPU runs at " + N + " = " + m,
       refs: ["Figures 5.6 and 5.7", "Table 5.7", "Section 5.4"],
       at: gpus + " GPU" + (gpus > 1 ? "s" : "") + ", " + N + " = " + m,
       rows: rowsFrom(entries, rec.b),
       foot: foot,
       chart: {
-        xName: "GPUs", xLabel: "A100-80 GPUs (four per node)", xScale: "log2", xTicks: counts,
+        xName: "GPUs", xLabel: "GPUs (four per node)", yLabel: "Time (s)", xScale: "log2", xTicks: counts,
         series: backs.filter(function (b) { return data[b]; }).map(function (b) {
-          var byG = data[b].byG;
-          return {
-            name: b + (data[b].kind === "measured" ? "" : data[b].kind === "interp" ? " (interpolated)" : " (estimate)"),
-            colour: colourOf(b), points: objToPoints(byG), emph: b === rec.b, dash: data[b].kind === "measured" ? "" : DASHES[1]
-          };
+          return serie(b, objToPoints(data[b].byG), {
+            label: b + (data[b].kind === "measured" ? "" : data[b].kind === "interp" ? " (interpolated)" : " (estimate)"),
+            emph: b === rec.b, dash: data[b].kind === "measured" ? "" : DASHES[1]
+          });
         }),
         marker: { x: gpus, label: gpus + " GPU" + (gpus > 1 ? "s" : "") },
-        vline: { x: 4, label: "one node" }
+        vline: { x: 4, label: "one full node" }
       }
     };
   }
@@ -317,19 +339,19 @@
         obs: g === "4" ? obs("gpunode", "", "", "CUDA-Q") : "", pickMatch: g === "4"
       };
     });
-    var foot = ["HEA with CUDA-Q on one, two and four A100-80 GPUs of one node, the median of ten repetitions (Table 5.5).", "The multi-GPU runs of Qiskit Aer and QuEST used the QFT (Figures 5.6 and 5.7)."];
+    var foot = ["HEA on one, two and four A100-80 GPUs of one node, the median of ten repetitions (Table 5.5).", "The multi-GPU runs of Qiskit Aer and QuEST used the QFT (Figures 5.6 and 5.7)."];
     if (m !== ctx.n) foot.push("These runs cover " + N + " = 28 to 34, so the table shows " + N + " = " + m + ".");
     if (entries.some(function (e) { return e.kind === "interp"; })) foot.push("~ marks a value interpolated between the neighbouring measured sizes.");
     return {
-      title: "CUDA-Q within one node · HEA · n = " + m,
+      title: "CUDA-Q within one node",
       refs: ["Table 5.5", "Figure 5.5", "Section 5.4.1"],
       at: N + " = " + m,
       rows: rowsFrom(entries, null),
       foot: foot,
       chart: {
-        xName: "n", xLabel: "Qubits n", xScale: "lin", xTicks: [28, 30, 32, 33, 34],
+        xName: "n", xLabel: "Qubits n", yLabel: "Time (s)", xScale: "lin", xTicks: [28, 30, 32, 33, 34],
         series: ["1", "2", "4"].map(function (g, i) {
-          return { name: "CUDA-Q · " + g + " GPU" + (g === "1" ? "" : "s"), colour: colourOf("CUDA-Q"), points: objToPoints(h[g]), emph: g === "4", dash: DASHES[2 - i] };
+          return serie("CUDA-Q · " + g + " GPU" + (g === "1" ? "" : "s"), objToPoints(h[g]), { emph: g === "4", dash: DASHES[2 - i] });
         }),
         marker: { x: m, label: "n = " + ctx.n }
       }
@@ -352,16 +374,14 @@
     if (m !== ctx.n) foot.push("The sweep starts at " + N + " = 3, so the ranking shows that size.");
     if (entries.some(function (e) { return e.kind === "estimate"; })) foot.push("≈ marks an estimate beyond " + N + " = 13, at least fourfold per added qubit, since the density matrix has 4ⁿ elements.");
     return {
-      title: "Density matrix · QFT with depolarising noise",
+      title: "Density-matrix backends",
       refs: ["Figure 5.9", "Section 5.6"],
       at: N + " = " + m,
       rows: rowsFrom(entries, rec.b),
       foot: foot,
       chart: {
-        xName: "n", xLabel: "Qubits n", xScale: "lin",
-        series: Object.keys(D.dm.time).map(function (k) {
-          return { name: names[k], colour: colourOf(names[k]), points: D.dm.time[k], emph: names[k] === rec.b };
-        }),
+        xName: "n", xLabel: "Number of qubits n", yLabel: "Simulation time (s)", xScale: "lin",
+        series: Object.keys(D.dm.time).map(function (k) { return serie(names[k], D.dm.time[k], { emph: names[k] === rec.b }); }),
         marker: { x: Math.min(m, S.LIMITS.dm), label: "n = " + ctx.n },
         extensions: entries.filter(function (e) { return e.kind === "estimate"; }).map(function (e) {
           return { colour: colourOf(e.b), from: e.v.from, to: [m, e.t] };
@@ -386,7 +406,7 @@
     ];
     entries.forEach(function (e) { e.pick = e.b === rec.b; e.t = null; });
     return {
-      title: "Stabiliser methods · Clifford circuit",
+      title: "Stabiliser backends on the Clifford circuit",
       refs: ["Figure 5.11", "Section 5.7"],
       at: N + " = " + n,
       qualitative: true,
@@ -407,21 +427,18 @@
       if (k.indexOf("Qibo") === 0 && v.kind === "none") v.note = n <= 28 ? "no completed point at this size" : "its contraction into the full state exceeds the GPU memory from " + N + " = 30";
       return { b: k, t: v.t, kind: v.kind, note: v.kind === "none" ? v.note : null, obs: obs("tn", "", "", k), pickMatch: k.indexOf(rec.b + " ·") === 0 };
     });
-    var foot = ["One A100-40, the median of the completed repetitions; CUDA-Q draws 1024 samples and Qibo contracts the full state (Figure 5.12).", "The state-vector rows are QFT references, a different circuit, shown as in Figure 5.12."];
+    var foot = ["One A100-40, the median of the completed repetitions; CUDA-Q samples 1024 shots and Qibo contracts the full state (Figure 5.12).", "The state-vector rows are the QFT references of Figure 5.12, a different circuit."];
     if (entries.some(function (e) { return e.kind === "interp"; })) foot.push("~ marks a value interpolated between the neighbouring completed sizes.");
     return {
-      title: "Tensor network · " + (cls === "deep" ? "twenty HEA layers" : "GHZ and one-layer HEA"),
+      title: "Tensor-network simulation, " + (cls === "deep" ? "HEA with twenty layers" : "GHZ and the one-layer HEA"),
       refs: ["Figure 5.12", "Section 5.7"],
       at: N + " = " + n,
       noRank: true,
       rows: entries.map(function (e) { e.pick = e.pickMatch; return e; }),
       foot: foot,
       chart: {
-        xName: "n", xLabel: "Qubits n (log scale)", xScale: "log10", xTicks: [4, 10, 30, 100, 300],
-        series: keys.filter(function (k) { return D.tn[k]; }).map(function (k, i) {
-          var isSV = k.indexOf("state vector") !== -1;
-          return { name: k, colour: colourOf(k.split(" ")[0] === "Qiskit" ? "Qiskit Aer" : k.split(" ")[0]), points: D.tn[k], emph: k.indexOf(rec.b + " ·") === 0, dash: isSV ? DASHES[2] : k.indexOf("one layer") !== -1 ? DASHES[1] : "" };
-        }),
+        xName: "n", xLabel: "Qubits n", yLabel: "Time (s)", xScale: "log10", xTicks: [4, 10, 40, 100, 400],
+        series: keys.filter(function (k) { return D.tn[k]; }).map(function (k) { return serie(k, D.tn[k], { emph: k.indexOf(rec.b + " ·") === 0 }); }),
         marker: { x: Math.min(Math.max(n, 4), 500), label: "n = " + n },
         vline: { x: 31, label: "largest state vector on one A100-40" }
       }
@@ -454,7 +471,7 @@
     if (!m) return [];
     var out = ["Measured (" + strip(m.at) + "), " + m.refs.join(", ") + ":"];
     m.rows.forEach(function (e) {
-      var r = (e.rank && !m.noRank ? e.rank + ". " : "- ") + e.b + "  " + strip(timeText(e));
+      var r = (e.rank && !m.noRank ? e.rank + ". " : "- ") + labelOf(e.b) + "  " + strip(timeText(e));
       if (e.ratio && e.ratio > 1.0049 && !m.noRank) r += " (" + e.ratio.toFixed(2) + "×)";
       if (e.note) r += "  [" + strip(e.note) + "]";
       out.push("  " + r);
@@ -462,19 +479,32 @@
     return out;
   }
 
-  /* ---------- chart ---------- */
-  var SUPERS = { "-": "⁻", "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹" };
-  function yLabel(v) {
-    if (v >= 1) return v >= 1000 ? (v / 1000) + "k s" : v + " s";
-    if (v >= 1e-3) return Math.round(v * 1000) + " ms";
-    return Math.round(v * 1e6) + " µs";
-  }
+  /* ---------- chart, drawn like the plots of Chapter 5 ---------- */
   function escAttr(s) { return String(s).replace(/[&<>"]/g, function (ch) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[ch]; }); }
+  function f1(v) { return v.toFixed(1); }
+  // Power of ten with a raised exponent, as on the logarithmic axes of the dissertation.
+  function pow10(d) { return "10<tspan dy=\"-4.5\" font-size=\"8.5\">" + (d < 0 ? "−" + (-d) : d) + "</tspan>"; }
+  // Outline of a hollow marker centred on (x, y).
+  function markPath(kind, x, y, r) {
+    function P(list) { return "M" + list.map(function (p) { return f1(x + p[0]) + " " + f1(y + p[1]); }).join("L") + "Z"; }
+    if (kind === "diamond") return P([[0, -1.3 * r], [1.15 * r, 0], [0, 1.3 * r], [-1.15 * r, 0]]);
+    if (kind === "square") return P([[-r, -r], [r, -r], [r, r], [-r, r]]);
+    if (kind === "tri") return P([[-1.2 * r, -0.95 * r], [1.2 * r, -0.95 * r], [0, 1.15 * r]]);
+    if (kind === "plus" || kind === "cross") {
+      var w = 0.42 * r, a = 1.25 * r;
+      return P([[-w, -a], [w, -a], [w, -w], [a, -w], [a, w], [w, w], [w, a], [-w, a], [-w, w], [-a, w], [-a, -w], [-w, -w]]);
+    }
+    return "M" + f1(x - r) + " " + f1(y) + "a" + f1(r) + " " + f1(r) + " 0 1 0 " + f1(2 * r) + " 0a" + f1(r) + " " + f1(r) + " 0 1 0 " + f1(-2 * r) + " 0Z";
+  }
+  function markSVG(s, x, y, r, title) {
+    return "<path class=\"mk" + (s.emph ? " emph" : "") + "\" d=\"" + markPath(s.marker, x, y, r) + "\" stroke=\"" + s.colour + "\"" +
+      (s.marker === "cross" ? " transform=\"rotate(45 " + f1(x) + " " + f1(y) + ")\"" : "") + ">" + (title ? "<title>" + escAttr(title) + "</title>" : "") + "</path>";
+  }
 
   function chartSVG(ch, width) {
     var W = Math.max(260, Math.round(width || 520));
-    var H = W < 420 ? 190 : 220;
-    var L = 46, R = 12, T = 12, B = 34;
+    var H = W < 420 ? 220 : 260;
+    var L = 56, R = 12, T = 14, B = 42;
     var all = [];
     ch.series.forEach(function (s) { s.points.forEach(function (p) { all.push(p); }); });
     (ch.extensions || []).forEach(function (e) { all.push(e.to); });
@@ -491,64 +521,72 @@
     var fx = ch.xScale === "lin" ? function (v) { return v; } : ch.xScale === "log2" ? Math.log2 : Math.log10;
     var x0 = fx(xmin), x1 = fx(xmax);
     if (x1 === x0) x1 = x0 + 1;
-    function X(v) { return L + (fx(v) - x0) / (x1 - x0) * (W - L - R); }
+    var padX = (W - L - R) * 0.035;
+    function X(v) { return L + padX + (fx(v) - x0) / (x1 - x0) * (W - L - R - 2 * padX); }
     function Y(v) { return T + (yhi - Math.log10(v)) / (yhi - ylo) * (H - T - B); }
     var o = [];
-    o.push("<svg class=\"chart\" xmlns=\"http://www.w3.org/2000/svg\" width=\"" + W + "\" height=\"" + H + "\" viewBox=\"0 0 " + W + " " + H + "\" role=\"img\" aria-label=\"" + escAttr(ch.aria || "Measured time against " + ch.xLabel) + "\">");
-    // y grid, one line per decade
-    var step = yhi - ylo > 6 ? 2 : 1;
+    o.push("<svg class=\"chart\" xmlns=\"http://www.w3.org/2000/svg\" width=\"" + W + "\" height=\"" + H + "\" viewBox=\"0 0 " + W + " " + H + "\" role=\"img\" aria-label=\"" + escAttr(ch.aria || (ch.yLabel || "Time") + " against " + ch.xLabel) + "\">");
+    // grid and y ticks, one per decade
+    var step = yhi - ylo > 7 ? 2 : 1;
     for (var d = ylo; d <= yhi; d += step) {
       var y = Y(Math.pow(10, d));
-      o.push("<line class=\"grid\" x1=\"" + L + "\" x2=\"" + (W - R) + "\" y1=\"" + y.toFixed(1) + "\" y2=\"" + y.toFixed(1) + "\"/>");
-      o.push("<text class=\"tick\" x=\"" + (L - 6) + "\" y=\"" + (y + 3.5).toFixed(1) + "\" text-anchor=\"end\">" + yLabel(Math.pow(10, d)) + "</text>");
+      o.push("<line class=\"grid\" x1=\"" + L + "\" x2=\"" + (W - R) + "\" y1=\"" + f1(y) + "\" y2=\"" + f1(y) + "\"/>");
+      o.push("<line class=\"tk\" x1=\"" + (L - 4) + "\" x2=\"" + L + "\" y1=\"" + f1(y) + "\" y2=\"" + f1(y) + "\"/>");
+      o.push("<text class=\"tick\" x=\"" + (L - 7) + "\" y=\"" + f1(y + 4) + "\" text-anchor=\"end\">" + pow10(d) + "</text>");
     }
     // x ticks
     var ticks = ch.xTicks;
     if (!ticks) {
       ticks = [];
-      var span = xmax - xmin, st = span > 40 ? 10 : span > 16 ? 4 : 2;
+      var span = xmax - xmin, st = span > 40 ? 10 : span > 14 ? 3 : 1;
       for (var t = Math.ceil(xmin / st) * st; t <= xmax; t += st) ticks.push(t);
     }
     ticks.forEach(function (t) {
       if (t < xmin || t > xmax) return;
       var x = X(t);
-      o.push("<line class=\"xt\" x1=\"" + x.toFixed(1) + "\" x2=\"" + x.toFixed(1) + "\" y1=\"" + (H - B) + "\" y2=\"" + (H - B + 4) + "\"/>");
-      o.push("<text class=\"tick\" x=\"" + x.toFixed(1) + "\" y=\"" + (H - B + 15) + "\" text-anchor=\"middle\">" + t + "</text>");
+      o.push("<line class=\"grid\" x1=\"" + f1(x) + "\" x2=\"" + f1(x) + "\" y1=\"" + T + "\" y2=\"" + (H - B) + "\"/>");
+      o.push("<line class=\"tk\" x1=\"" + f1(x) + "\" x2=\"" + f1(x) + "\" y1=\"" + (H - B) + "\" y2=\"" + (H - B + 4) + "\"/>");
+      o.push("<text class=\"tick\" x=\"" + f1(x) + "\" y=\"" + (H - B + 16) + "\" text-anchor=\"middle\">" + t + "</text>");
     });
-    o.push("<line class=\"axis\" x1=\"" + L + "\" x2=\"" + (W - R) + "\" y1=\"" + (H - B) + "\" y2=\"" + (H - B) + "\"/>");
-    o.push("<text class=\"axlabel\" x=\"" + ((L + W - R) / 2).toFixed(1) + "\" y=\"" + (H - 4) + "\" text-anchor=\"middle\">" + escAttr(ch.xLabel) + "</text>");
+    o.push("<rect class=\"frame\" x=\"" + L + "\" y=\"" + T + "\" width=\"" + (W - L - R) + "\" height=\"" + (H - T - B) + "\"/>");
+    o.push("<text class=\"axlabel\" x=\"" + f1((L + W - R) / 2) + "\" y=\"" + (H - 6) + "\" text-anchor=\"middle\">" + escAttr(ch.xLabel) + "</text>");
+    var cy = (T + H - B) / 2;
+    o.push("<text class=\"axlabel\" x=\"13\" y=\"" + f1(cy) + "\" text-anchor=\"middle\" transform=\"rotate(-90 13 " + f1(cy) + ")\">" + escAttr(ch.yLabel || "Time (s)") + "</text>");
     // reference lines
     if (ch.vline && ch.vline.x >= xmin && ch.vline.x <= xmax) {
       var vx = X(ch.vline.x);
-      o.push("<line class=\"vref\" x1=\"" + vx.toFixed(1) + "\" x2=\"" + vx.toFixed(1) + "\" y1=\"" + T + "\" y2=\"" + (H - B) + "\"><title>" + escAttr(ch.vline.label) + "</title></line>");
+      o.push("<line class=\"vref\" x1=\"" + f1(vx) + "\" x2=\"" + f1(vx) + "\" y1=\"" + T + "\" y2=\"" + (H - B) + "\"><title>" + escAttr(ch.vline.label) + "</title></line>");
     }
     if (ch.hline) {
       var hy = Y(ch.hline.y);
-      o.push("<line class=\"vref\" x1=\"" + L + "\" x2=\"" + (W - R) + "\" y1=\"" + hy.toFixed(1) + "\" y2=\"" + hy.toFixed(1) + "\"><title>" + escAttr(ch.hline.label) + "</title></line>");
+      o.push("<line class=\"vref\" x1=\"" + L + "\" x2=\"" + (W - R) + "\" y1=\"" + f1(hy) + "\" y2=\"" + f1(hy) + "\"><title>" + escAttr(ch.hline.label) + "</title></line>");
     }
-    // series, emphasised one last so it sits on top
+    // the size asked
+    if (ch.marker && ch.marker.x >= xmin && ch.marker.x <= xmax) {
+      var mx = X(ch.marker.x);
+      o.push("<line class=\"marker\" x1=\"" + f1(mx) + "\" x2=\"" + f1(mx) + "\" y1=\"" + T + "\" y2=\"" + (H - B) + "\"/>");
+    }
+    // series, the selected one last so that it lies on top
     var order = ch.series.slice().sort(function (a, b) { return (a.emph ? 1 : 0) - (b.emph ? 1 : 0); });
     order.forEach(function (s) {
       var pts = sorted(s.points).filter(function (p) { return p[1] > 0; });
       if (!pts.length) return;
-      var dpath = pts.map(function (p, i) { return (i ? "L" : "M") + X(p[0]).toFixed(1) + " " + Y(p[1]).toFixed(1); }).join(" ");
+      var dpath = pts.map(function (p, i) { return (i ? "L" : "M") + f1(X(p[0])) + " " + f1(Y(p[1])); }).join(" ");
       o.push("<path class=\"ser" + (s.emph ? " emph" : "") + "\" d=\"" + dpath + "\" stroke=\"" + s.colour + "\"" + (s.dash ? " stroke-dasharray=\"" + s.dash + "\"" : "") + "><title>" + escAttr(s.name) + "</title></path>");
-      if (s.emph || pts.length <= 12) {
-        pts.forEach(function (p) {
-          o.push("<circle class=\"pt" + (s.emph ? " emph" : "") + "\" cx=\"" + X(p[0]).toFixed(1) + "\" cy=\"" + Y(p[1]).toFixed(1) + "\" r=\"" + (s.emph ? 2.6 : 1.8) + "\" fill=\"" + s.colour + "\"><title>" + escAttr(s.name + ", " + ch.xName + " = " + p[0] + ", " + S.fmtT(p[1])) + "</title></circle>");
-        });
-      }
+      var r = pts.length > 22 ? 2.6 : 3.2;
+      pts.forEach(function (p) {
+        o.push(markSVG(s, X(p[0]), Y(p[1]), r, s.name + ", " + ch.xName + " = " + p[0] + ", " + S.fmtT(p[1])));
+      });
     });
     (ch.extensions || []).forEach(function (e) {
       if (!e.from) return;
-      o.push("<line class=\"est\" x1=\"" + X(e.from[0]).toFixed(1) + "\" y1=\"" + Y(e.from[1]).toFixed(1) + "\" x2=\"" + X(e.to[0]).toFixed(1) + "\" y2=\"" + Y(e.to[1]).toFixed(1) + "\" stroke=\"" + e.colour + "\"/>");
-      o.push("<circle class=\"pt est\" cx=\"" + X(e.to[0]).toFixed(1) + "\" cy=\"" + Y(e.to[1]).toFixed(1) + "\" r=\"3\" stroke=\"" + e.colour + "\"><title>Estimate, " + S.fmtT(e.to[1]) + "</title></circle>");
+      o.push("<line class=\"est\" x1=\"" + f1(X(e.from[0])) + "\" y1=\"" + f1(Y(e.from[1])) + "\" x2=\"" + f1(X(e.to[0])) + "\" y2=\"" + f1(Y(e.to[1])) + "\" stroke=\"" + e.colour + "\"/>");
+      o.push("<circle class=\"pt est\" cx=\"" + f1(X(e.to[0])) + "\" cy=\"" + f1(Y(e.to[1])) + "\" r=\"3.2\" stroke=\"" + e.colour + "\"><title>Estimate, " + S.fmtT(e.to[1]) + "</title></circle>");
     });
     if (ch.marker && ch.marker.x >= xmin && ch.marker.x <= xmax) {
-      var mx = X(ch.marker.x);
-      o.push("<line class=\"marker\" x1=\"" + mx.toFixed(1) + "\" x2=\"" + mx.toFixed(1) + "\" y1=\"" + T + "\" y2=\"" + (H - B) + "\"/>");
-      var anchor = mx > W - 70 ? "end" : "start";
-      o.push("<text class=\"mlabel\" x=\"" + (mx + (anchor === "end" ? -5 : 5)).toFixed(1) + "\" y=\"" + (T + 10) + "\" text-anchor=\"" + anchor + "\">" + escAttr(ch.marker.label) + "</text>");
+      var lx = X(ch.marker.x);
+      var anchor = lx > W - 80 ? "end" : "start";
+      o.push("<text class=\"mlabel\" x=\"" + f1(lx + (anchor === "end" ? -5 : 5)) + "\" y=\"" + (T + 13) + "\" text-anchor=\"" + anchor + "\">" + escAttr(ch.marker.label) + "</text>");
     }
     o.push("</svg>");
     return o.join("");
@@ -565,44 +603,60 @@
     var ul = el("ul", "legend");
     ch.series.forEach(function (s) {
       var li = el("li", s.emph ? "emph" : "");
-      li.innerHTML = "<svg width=\"22\" height=\"8\" aria-hidden=\"true\"><line x1=\"1\" x2=\"21\" y1=\"4\" y2=\"4\" stroke=\"" + s.colour + "\" stroke-width=\"" + (s.emph ? 3 : 2) + "\"" + (s.dash ? " stroke-dasharray=\"" + s.dash.split(" ").map(function (v) { return Math.max(1, Math.round(v * 0.6)); }).join(" ") + "\"" : "") + "/></svg>";
+      li.innerHTML = "<svg class=\"chart\" width=\"34\" height=\"12\" aria-hidden=\"true\"><path class=\"ser" + (s.emph ? " emph" : "") + "\" d=\"M1 6H33\" stroke=\"" + s.colour + "\"" + (s.dash ? " stroke-dasharray=\"" + s.dash + "\"" : "") + "/>" + markSVG(s, 17, 6, 3.2, "") + "</svg>";
       li.appendChild(document.createTextNode(s.name));
       ul.appendChild(li);
     });
+    var extra = [];
+    if (ch.marker) extra.push("<li class=\"ref\"><svg class=\"chart\" width=\"34\" height=\"12\" aria-hidden=\"true\"><line class=\"marker\" x1=\"1\" x2=\"33\" y1=\"6\" y2=\"6\"/></svg>the size asked</li>");
+    if (ch.vline) extra.push("<li class=\"ref\"><svg class=\"chart\" width=\"34\" height=\"12\" aria-hidden=\"true\"><line class=\"vref\" x1=\"1\" x2=\"33\" y1=\"6\" y2=\"6\"/></svg>" + escAttr(ch.vline.label) + "</li>");
+    if (ch.hline) extra.push("<li class=\"ref\"><svg class=\"chart\" width=\"34\" height=\"12\" aria-hidden=\"true\"><line class=\"vref\" x1=\"1\" x2=\"33\" y1=\"6\" y2=\"6\"/></svg>" + escAttr(ch.hline.label) + "</li>");
+    if (extra.length) ul.insertAdjacentHTML("beforeend", extra.join(""));
     return ul;
   }
+  // A table ruled like those of the dissertation: each backend on one row, its observation beneath.
   function table(m) {
     var wrap = el("div", "rank-wrap");
-    var t = el("table", "rank" + (m.qualitative || m.noRank ? " qual" : ""));
-    var cap = el("caption", "visually-hidden", "Backends at " + m.at);
-    t.appendChild(cap);
-    var head = el("thead");
     var ranked = !m.qualitative && !m.noRank;
-    head.innerHTML = "<tr>" + (ranked ? "<th scope=\"col\" class=\"rk\">#</th>" : "") + "<th scope=\"col\">" + (m.qualitative || m.rows.some(function (e) { return e.b.indexOf(" · ") !== -1; }) ? "Series" : "Backend") + "</th><th scope=\"col\" class=\"tm\">Time at " + m.at + "</th>" +
-      (ranked ? "<th scope=\"col\" class=\"rt\">vs fastest</th>" : "") + "<th scope=\"col\" class=\"obs\">Observation</th></tr>";
+    var seriesNames = m.qualitative || m.rows.some(function (e) { return e.b.indexOf(" · ") !== -1; });
+    var t = el("table", "rank" + (ranked ? "" : " qual"));
+    t.appendChild(el("caption", "", (seriesNames ? "Series" : "Backends") + " at " + m.at + (ranked ? ", fastest first, with the ratio to the fastest time" : "")));
+    var head = el("thead");
+    head.innerHTML = "<tr>" + (ranked ? "<th scope=\"col\" class=\"rk\"><span class=\"visually-hidden\">Rank</span></th>" : "") + "<th scope=\"col\">" + (seriesNames ? "Series" : "Backend") + "</th><th scope=\"col\" class=\"tm\">Time</th>" +
+      (ranked ? "<th scope=\"col\" class=\"rt\">Ratio</th>" : "") + "</tr>";
     t.appendChild(head);
+    var cols = ranked ? 4 : 2;
     var body = el("tbody");
     m.rows.forEach(function (e) {
-      var tr = el("tr", (e.pick ? "pick" : "") + (e.t == null && !e.label ? " none" : "") + (e.excluded ? " flagged" : ""));
-      if (ranked) tr.appendChild(el("td", "rk", e.rank ? String(e.rank) : "·"));
+      var cls = (e.pick ? "pick" : "") + (e.t == null && !e.label ? " none" : "") + (e.excluded ? " flagged" : "");
+      var tr = el("tr", "main " + cls);
+      if (ranked) tr.appendChild(el("td", "rk", e.rank ? String(e.rank) : ""));
       var name = el("td", "nm");
       var sw = el("span", "dot");
       sw.style.background = colourOf(e.b);
       name.appendChild(sw);
-      var repo = S.REPOS[e.b] || S.REPOS[e.b.split(" · ")[0]];
+      var shown = labelOf(e.b);
+      var repo = S.REPOS[e.b] || S.REPOS[baseName(e.b)];
       if (repo) {
-        var a = el("a", "repo inline", e.b.replace(/&/g, "&amp;"));
+        var a = el("a", "repo", shown.replace(/&/g, "&amp;"));
         a.href = repo; a.target = "_blank"; a.rel = "noopener noreferrer";
         a.title = "Source repository (opens in a new tab)";
         name.appendChild(a);
-      } else name.appendChild(document.createTextNode(e.b));
-      if (e.pick) name.appendChild(el("span", "pick-tag", "outcome"));
+      } else name.appendChild(document.createTextNode(shown));
+      if (e.pick) name.appendChild(el("span", "pick-tag", "selected"));
       tr.appendChild(name);
       tr.appendChild(el("td", "tm" + (e.kind === "estimate" || e.kind === "interp" ? " est" : ""), timeText(e)));
-      if (ranked) tr.appendChild(el("td", "rt", e.ratio ? (e.ratio < 1.005 ? "fastest" : e.ratio.toFixed(2) + "×") : ""));
-      var ob = el("td", "obs", (e.note ? "<span class=\"rnote\">" + e.note.charAt(0).toUpperCase() + e.note.slice(1) + ".</span> " : "") + (e.obs || ""));
-      tr.appendChild(ob);
+      if (ranked) tr.appendChild(el("td", "rt", e.ratio ? (e.ratio < 1.005 ? "1" : e.ratio.toFixed(2) + "×") : ""));
       body.appendChild(tr);
+      var text = (e.note ? "<span class=\"rnote\">" + e.note.charAt(0).toUpperCase() + e.note.slice(1) + ".</span> " : "") + (e.obs || "");
+      if (text) {
+        var tr2 = el("tr", "sub " + cls);
+        if (ranked) tr2.appendChild(el("td", "rk", ""));
+        var ob = el("td", "obs", text);
+        ob.colSpan = cols - (ranked ? 1 : 0);
+        tr2.appendChild(ob);
+        body.appendChild(tr2);
+      }
     });
     t.appendChild(body);
     wrap.appendChild(t);
@@ -616,7 +670,7 @@
     if (!w) return;
     if (holder._w === w) return;
     holder._w = w;
-    holder.innerHTML = chartSVG(ch, w);
+    holder.innerHTML = chartSVG(ch, Math.min(w, 620));
   }
   var resizeTimer = null;
   if (typeof window.addEventListener === "function") {
@@ -633,27 +687,32 @@
     opts = opts || {};
     var det = el("details", "evidence");
     if (opts.open) det.open = true;
-    var sum = el("summary", "", "<span class=\"ev-h\">Measurements</span><span class=\"ev-refs\">" + m.refs.join(" · ") + "</span>");
-    det.appendChild(sum);
+    det.appendChild(el("summary", "", "<span class=\"ev-h\">Measurements</span> <span class=\"ev-refs\">" + m.refs.join(", ") + "</span>"));
     var body = el("div", "ev-body");
-    body.appendChild(el("p", "ev-title", m.title));
+    var caption = m.title + ". " + m.foot[0];
     if (m.chart) {
+      var fig = el("figure", "plot");
       var holder = el("div", "chart-box");
-      body.appendChild(holder);
-      body.appendChild(legend(m.chart));
-      var entry = { holder: holder, chart: m.chart };
-      live.push(entry);
+      fig.appendChild(holder);
+      fig.appendChild(legend(m.chart));
+      fig.appendChild(el("figcaption", "caption", caption));
+      body.appendChild(fig);
+      live.push({ holder: holder, chart: m.chart });
       var paint = function () { holder._w = 0; draw(holder, m.chart); };
       det.addEventListener("toggle", function () { if (det.open) paint(); });
       if (opts.open) setTimeout(paint, 0);
+    } else {
+      body.appendChild(el("p", "caption", caption));
     }
     body.appendChild(table(m));
-    var foot = el("ul", "ev-foot");
-    m.foot.forEach(function (f) { foot.appendChild(el("li", "", f)); });
-    body.appendChild(foot);
+    if (m.foot.length > 1) {
+      var foot = el("ul", "ev-foot");
+      m.foot.slice(1).forEach(function (f) { foot.appendChild(el("li", "", f)); });
+      body.appendChild(foot);
+    }
     det.appendChild(body);
     return det;
   }
 
-  window.Evidence = { model: model, render: render, chartSVG: chartSVG, lines: lines, valueAt: valueAt, OBS: OBS };
+  window.Evidence = { model: model, render: render, chartSVG: chartSVG, lines: lines, valueAt: valueAt, OBS: OBS, colourOf: colourOf, labelOf: labelOf };
 })();
