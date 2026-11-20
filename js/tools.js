@@ -52,7 +52,7 @@
     { v: "a100-40", t: "NVIDIA A100-40 (40 GB)", gib: 40, kind: "GPU" },
     { v: "a100-80", t: "NVIDIA A100-80 (80 GB)", gib: 80, kind: "GPU" },
     { v: "x86", t: "Deucalion x86 node, 242 GiB per job", gib: 242, kind: "node" },
-    { v: "i9", t: "i9-13900KS workstation, 125 GiB usable", gib: 125, kind: "machine" },
+    { v: "i9", t: "i9-13900KS platform, 125 GiB usable", gib: 125, kind: "machine" },
     { v: "custom", t: "Other, memory per device in GiB", gib: null, kind: "device" }
   ];
   function memoryTool(opts) {
@@ -241,16 +241,16 @@
       var top = res.rows[0];
       var best = el("p", "cmp-best");
       var sw = el("span", "dot");
-      sw.style.background = S.COLOURS[top.b] || "#86d4f0";
+      sw.style.background = S.colourOf(top.b);
       best.appendChild(sw);
-      best.appendChild(el("span", "", "<b>" + top.b + "</b> · " + S.fmtT(top.t)));
+      best.appendChild(el("span", "", "<b>" + top.b + "</b>, " + S.fmtT(top.t)));
       cd.appendChild(best);
       var ol = el("ol", "cmp-list");
       res.rows.forEach(function (r) {
-        ol.appendChild(el("li", r.note ? "flagged" : "", r.b + " <span>" + S.fmtT(r.t) + (r.t > top.t * 1.005 ? " · " + (r.t / top.t).toFixed(2) + "×" : "") + (r.note ? " · " + r.note : "") + "</span>"));
+        ol.appendChild(el("li", r.note ? "flagged" : "", r.b + " <span>" + S.fmtT(r.t) + (r.t > top.t * 1.005 ? ", " + (r.t / top.t).toFixed(2) + "×" : "") + (r.note ? ", " + r.note : "") + "</span>"));
       });
       cd.appendChild(ol);
-      cd.appendChild(el("p", "cmp-src", N + " = " + res.n + " · " + res.source + (res.note ? " · " + res.note : "")));
+      cd.appendChild(el("p", "cmp-src", N + " = " + res.n + ", " + res.source + (res.note ? ". " + res.note : "")));
       return cd;
     }
     function update() {
@@ -290,20 +290,20 @@
     var classes = (res && res.blocks || []).map(function (b) { return b.cls; });
     var distributed = /A100-80|x86 nodes/.test(regimes);
     var gpu = /A100/.test(regimes);
-    var big = A && A.n != null && (A.n >= 35 || /32 to 64|64 x86/.test(regimes));
+    var big = A && A.n != null && (A.n >= 35 || /32 or 64|64 x86/.test(regimes));
     return [
       { t: "Single precision", on: A && A.noise !== "yes" && outs.some(function (r) { return r.kind === "sv"; }),
         d: "Every comparison here is in double precision. Single precision halves the memory, so each device holds one more qubit, and halves the bytes moved in each pass, but its rounding error lowers the fidelity measurably beyond about 20 qubits and 50 gates (Section 4.3.1)." },
       { t: "Other processors, GPUs and interconnects", on: true,
-        d: "The rankings come from AMD EPYC 7742 nodes and A100 GPUs on Deucalion and from an i9-13900KS workstation; on other hardware the crossover sizes may lie elsewhere, and other studies find that the ranking also varies with the workload (Section 5.8)." },
+        d: "The rankings come from AMD EPYC 7742 nodes and A100 GPUs on Deucalion and from the i9-13900KS platform. They are specific to the circuits, builds and platforms evaluated, as other studies indicate that the performance ranking varies with the workload (Section 5.8)." },
       { t: "More than sixteen GPUs or 64 nodes", on: !!big,
         d: "The GPU series end at sixteen A100-80 and the CPU series at 64 x86 nodes. Beyond them, the scaling steps of Tables 5.3 and 5.7 are the only guide." },
       { t: "Tuned transport between nodes", on: /across|A100-80 over/.test(regimes) || (A && A.n >= 35 && gpu),
-        d: "Across nodes each GPU swapped about 0.9 GB/s under the default UCX settings of Deucalion, two orders of magnitude below NVLink, so a tuned transport could change the order across nodes (Section 5.4.2)." },
-      { t: "Noise on GPUs and trajectory sampling", on: A && A.noise === "yes",
-        d: "The noise study used density matrices on a CPU workstation, depolarising noise of p = 0.01 and the QFT. GPU noise simulation and trajectory sampling, which keeps the memory of a state vector, are proposed as future work (Section 6.3)." },
+        d: "Across nodes each GPU swapped data at about 0.9 GB/s under the default UCX settings of Deucalion, two orders of magnitude below NVLink. Transport tuning could reduce this cost and change the relative performance of the backends (Sections 5.4.2 and 6.2)." },
+      { t: "Other noise rates, circuits and trajectory sampling", on: A && A.noise === "yes",
+        d: "The noise study used density matrices on the i9-13900KS platform, the QFT and one noise rate, p = 0.01, up to 13 qubits. Trajectory sampling, which stores a state vector for each trajectory, and a channel comparison over more backends, noise strengths and circuits are proposed as future work (Section 6.3)." },
       { t: "Circuits outside the benchmark set", on: unsure,
-        d: "The timed circuits are the QFT, the HEA, the Clifford circuit and, for tensor networks, GHZ. Other circuits are placed by structure, and their ranking may differ." },
+        d: "The timed circuits are the QFT, the HEA, the Clifford circuit and, for tensor networks, GHZ. Other circuits are placed by structure, and they may produce different rankings (Section 6.2)." },
       { t: "Distributed series of one circuit", on: distributed && classes.some(function (c) { return c && c !== "dense"; }),
         d: "The multi-node CPU series and the comparison of all three multi-GPU backends use the QFT; on several GPUs, CUDA-Q alone also ran the HEA (Table 5.5)." },
       { t: "Other builds and settings", on: names.some(function (b) { return b === "QuEST" || b === "Qulacs" || b === "Qiskit Aer"; }),
